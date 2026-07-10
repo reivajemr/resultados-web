@@ -4,10 +4,19 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { INHScraper } from './inh-scraper.js';
 import AnimalitosScheduler from './scheduler.js';
+import * as dbModule from './db.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
 const PORT = process.env.PORT || 3000;
+
+const db = process.env.DATABASE_URL ? dbModule : null;
+if (db) {
+  await db.initAllTables();
+  console.log('[DB] Persistencia activa');
+} else {
+  console.log('[DB] Sin DATABASE_URL — datos solo en memoria');
+}
 
 const inh = new INHScraper({
   username: process.env.INH_USER,
@@ -16,7 +25,8 @@ const inh = new INHScraper({
 
 const animalitos = new AnimalitosScheduler({
   loteriaEmail: process.env.LOTERIA_EMAIL,
-  loteriaPassword: process.env.LOTERIA_PASSWORD
+  loteriaPassword: process.env.LOTERIA_PASSWORD,
+  db
 });
 
 let inhPollInterval = null;
@@ -128,7 +138,7 @@ async function runINHDay() {
 
 /* ───── Animalitos Scheduler ───── */
 
-animalitos.start();
+await animalitos.start();
 console.log('[Animalitos] Scheduler iniciado');
 
 /* ───── INH schedule ───── */
@@ -153,6 +163,27 @@ app.get('/api/animalitos', (req, res) => {
     timestamp: new Date().toISOString(),
     games: animalitos.getResults()
   });
+});
+
+app.get('/api/animalitos/historial', async (req, res) => {
+  if (!db) return res.json({ error: 'Base de datos no disponible' });
+  const fecha = req.query.fecha || animalitos._getTodayStr();
+  const gameId = req.query.juego;
+  try {
+    if (gameId) {
+      const rows = await db.cargarResultados(gameId, fecha);
+      return res.json({ fecha, [gameId]: rows });
+    }
+    const GAMES_LIST = (await import('./scheduler.js')).GAMES;
+    const result = {};
+    for (const g of GAMES_LIST) {
+      const rows = await db.cargarResultados(g.id, fecha);
+      result[g.id] = rows;
+    }
+    res.json({ fecha, ...result });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 app.get('/api/debug/lotto-page', async (req, res) => {

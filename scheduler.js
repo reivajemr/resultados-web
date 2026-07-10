@@ -45,9 +45,10 @@ const GAMES = [
 ];
 
 class AnimalitosScheduler {
-  constructor({ loteriaEmail, loteriaPassword }) {
+  constructor({ loteriaEmail, loteriaPassword, db }) {
     this.loteriaEmail = loteriaEmail;
     this.loteriaPassword = loteriaPassword;
+    this.db = db;
     this.intervalId = null;
 
     this.state = {};
@@ -255,6 +256,11 @@ class AnimalitosScheduler {
             sorteo.status = 'completed';
             sorteo.result = extracted;
             todayCache.results[time] = extracted;
+            if (this.db) {
+              this.db.guardarResultado(game.id, today, time, extracted).catch(e =>
+                console.error(`[DB] Error guardando ${game.id} ${time}:`, e.message)
+              );
+            }
           } else {
             if (sorteo.attempts >= MAX_RETRIES) {
               sorteo.status = 'failed';
@@ -274,9 +280,38 @@ class AnimalitosScheduler {
     }
   }
 
-  start() {
+  async start() {
+    if (this.db) {
+      await this._loadFromDB();
+    }
     this.tick();
     this.intervalId = setInterval(() => this.tick(), RETRY_INTERVAL_MS);
+  }
+
+  async _loadFromDB() {
+    const today = this._getTodayStr();
+    this.state[today] = {};
+    this.cache[today] = {};
+    for (const game of GAMES) {
+      this.state[today][game.id] = this._getInitialStateForGame(game.id);
+      this.cache[today][game.id] = { results: {}, game };
+      try {
+        const rows = await this.db.cargarResultados(game.id, today);
+        if (rows && rows.length > 0) {
+          for (const row of rows) {
+            const time = row.hora;
+            if (this.state[today][game.id][time]) {
+              this.state[today][game.id][time].status = 'completed';
+              this.state[today][game.id][time].result = row.datos;
+              this.cache[today][game.id].results[time] = row.datos;
+            }
+          }
+          console.log(`[DB] Cargados ${rows.length} resultados para ${game.id}`);
+        }
+      } catch (e) {
+        console.error(`[DB] Error cargando ${game.id}:`, e.message);
+      }
+    }
   }
 
   stop() {
