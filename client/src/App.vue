@@ -24,6 +24,11 @@
         </div>
         <div class="debug-url" v-if="debugUrl">{{ debugUrl }}</div>
       </div>
+      <div class="animalitos-actions">
+        <button v-if="isHistorical" class="btn-fetch" @click="fetchDate" :disabled="fetching">
+          {{ fetching ? 'Cargando...' : `Cargar resultados de ${selectedDate}` }}
+        </button>
+      </div>
       <div class="animalitos-grid">
         <AnimalitosPanel v-for="game in animalitos" :key="game.id" :game="game" />
       </div>
@@ -40,10 +45,24 @@ import StatusBar from './components/StatusBar.vue'
 
 const { inh, animalitos, loading, selectedDate, isHistorical, debugUrl, fetchAll, goToDate, goToday, prevDay, nextDay } = useApi()
 const lastUpdate = ref(null)
+const fetching = ref(false)
 
 async function refresh() {
   await fetchAll()
   lastUpdate.value = new Date()
+}
+
+async function fetchDate() {
+  fetching.value = true
+  try {
+    const res = await fetch(`/api/animalitos/refetch?fecha=${selectedDate.value}`, { method: 'POST' })
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    await refresh()
+  } catch (e) {
+    console.error('Error fetching date:', e.message)
+  } finally {
+    fetching.value = false
+  }
 }
 
 onMounted(() => {
@@ -74,4 +93,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
 .btn-today { padding: 4px 12px; background: #e8eaf6; color: #1a1a2e; border: 1px solid #c5cae9; border-radius: 4px; cursor: pointer; font-size: 0.8rem; }
 .debug-url { font-size: 0.75rem; color: #999; margin-bottom: 8px; font-family: monospace; }
 .animalitos-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(350px, 1fr)); gap: 16px; }
+.animalitos-actions { margin-bottom: 12px; }
+.btn-fetch { padding: 6px 16px; background: #2e7d32; color: #fff; border: none; border-radius: 6px; cursor: pointer; font-size: 0.85rem; }
+.btn-fetch:disabled { opacity: 0.6; cursor: not-allowed; }
 </style>
