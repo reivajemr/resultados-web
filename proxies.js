@@ -74,6 +74,29 @@ async function postOption(option, loteria, fecha = null) {
   }
 }
 
+export async function debugLottoActivo(gameId, date) {
+  const path = ACTIVO_GAMES[gameId];
+  const tokens = await obtenerTokens(path);
+  const tokenTests = [];
+  for (const opt of tokens) {
+    const preview = opt.substring(0, 30) + '...';
+    const info = await postOption(opt, path);
+    const data = await postOption(opt, path, date);
+    tokenTests.push({
+      preview,
+      length: opt.length,
+      infoResult: info ? `OK (${info.length} items, tipojuego: ${!!info[0]?.tipojuego})` : 'null',
+      dataResult: data ? `OK (${data.length} items)` : 'null'
+    });
+  }
+  return {
+    tokensCount: tokens.length,
+    cookie: activoSession.cookie ? 'set' : 'none',
+    tokenTests,
+    firstTokenData: tokens.length > 0 ? await postOption(tokens[0], path, date) : null
+  };
+}
+
 export async function fetchLottoActivo(gameId, date) {
   const path = ACTIVO_GAMES[gameId];
   if (!path) return [];

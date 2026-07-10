@@ -155,15 +155,48 @@ app.get('/api/animalitos', (req, res) => {
   });
 });
 
+app.get('/api/debug/lotto-page', async (req, res) => {
+  const axios = (await import('axios')).default;
+  const cheerio = await import('cheerio');
+  const juego = req.query.juego || 'lotto_activo';
+  try {
+    const resp = await axios.get(`https://www.lottoactivo.com/resultados/${juego}/`, {
+      headers: { 'User-Agent': 'Mozilla/5.0' },
+      timeout: 15000
+    });
+    const $ = cheerio.load(resp.data);
+    const scripts = $('script').map((_, el) => $(el).html()).get();
+    const allMatches = [];
+    for (const s of scripts) {
+      if (!s) continue;
+      const matches = s.match(/'option':'([^']+)'/g);
+      if (matches) allMatches.push(...matches);
+    }
+    const sampleScripts = scripts.filter(s => s && s.includes('option')).slice(0, 3);
+    res.json({
+      juego,
+      status: resp.status,
+      contentLength: resp.data.length,
+      scriptCount: scripts.length,
+      scriptsWithOption: scripts.filter(s => s && s.includes('option')).length,
+      matches: allMatches.slice(0, 10),
+      hasSessionCookie: !!resp.headers['set-cookie'],
+      sampleScripts: sampleScripts.map(s => s.substring(0, 300))
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.get('/api/debug/lotto', async (req, res) => {
-  const { fetchLottoActivo } = await import('./proxies.js');
+  const { debugLottoActivo } = await import('./proxies.js');
   const juego = req.query.juego || 'lotto_activo';
   const fecha = req.query.fecha || new Date(Date.now() - 4 * 3600000).toISOString().split('T')[0];
   try {
-    const data = await fetchLottoActivo(juego, fecha);
-    res.json({ juego, fecha, data });
+    const data = await debugLottoActivo(juego, fecha);
+    res.json({ juego, fecha, debug: data });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: err.message, stack: err.stack });
   }
 });
 
