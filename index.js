@@ -166,21 +166,39 @@ app.get('/api/animalitos', (req, res) => {
 });
 
 app.get('/api/animalitos/historial', async (req, res) => {
-  if (!db) return res.json({ error: 'Base de datos no disponible' });
+  if (!db) return res.status(503).json({ error: 'Base de datos no disponible' });
   const fecha = req.query.fecha || animalitos._getTodayStr();
   const gameId = req.query.juego;
+  const GAMES_LIST = (await import('./scheduler.js')).GAMES;
   try {
     if (gameId) {
+      const game = GAMES_LIST.find(g => g.id === gameId);
       const rows = await db.cargarResultados(gameId, fecha);
-      return res.json({ fecha, [gameId]: rows });
+      const draws = rows ? rows.map(r => ({
+        time: r.hora,
+        result: r.datos,
+        status: r.estado,
+        attempts: 1,
+        error: null
+      })) : [];
+      return res.json({ timestamp: new Date().toISOString(), games: [{
+        id: gameId, name: game?.name || gameId,
+        draws
+      }]});
     }
-    const GAMES_LIST = (await import('./scheduler.js')).GAMES;
-    const result = {};
+    const result = [];
     for (const g of GAMES_LIST) {
       const rows = await db.cargarResultados(g.id, fecha);
-      result[g.id] = rows;
+      const draws = rows ? rows.map(r => ({
+        time: r.hora,
+        result: r.datos,
+        status: r.estado,
+        attempts: 1,
+        error: null
+      })) : [];
+      result.push({ id: g.id, name: g.name, draws });
     }
-    res.json({ fecha, ...result });
+    res.json({ timestamp: new Date().toISOString(), games: result });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
