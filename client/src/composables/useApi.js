@@ -1,4 +1,4 @@
-import { ref } from 'vue'
+import { ref, watch } from 'vue'
 
 export function useApi() {
   const inh = ref({ program: [], races: [], isRunning: false, lastPoll: null })
@@ -24,6 +24,7 @@ export function useApi() {
 
   async function fetchAnimalitos() {
     try {
+      loading.value = true
       const url = selectedDate.value === todayStr()
         ? '/api/animalitos'
         : `/api/animalitos/historial?fecha=${selectedDate.value}`
@@ -33,20 +34,23 @@ export function useApi() {
       animalitos.value = data.games || []
     } catch (e) {
       console.error('Error fetching animalitos:', e.message)
+    } finally {
+      loading.value = false
     }
   }
 
   async function fetchAll() {
-    loading.value = true
     error.value = null
     await Promise.all([fetchINH(), fetchAnimalitos()])
-    loading.value = false
   }
+
+  watch(selectedDate, () => {
+    isHistorical.value = selectedDate.value !== todayStr()
+    fetchAnimalitos()
+  })
 
   function goToDate(date) {
     selectedDate.value = date
-    isHistorical.value = date !== todayStr()
-    fetchAnimalitos()
   }
 
   function goToday() {
