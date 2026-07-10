@@ -343,6 +343,45 @@ class AnimalitosScheduler {
     }
   }
 
+  async refetchDate(dayStr) {
+    if (!this.db) return [];
+    const results = [];
+    for (const game of GAMES) {
+      let data = null;
+      switch (game.source) {
+        case 'lottoactivo':
+          data = await fetchLottoActivo(game.id, dayStr);
+          break;
+        case 'guacharito':
+          data = await fetchGuacharito(dayStr);
+          break;
+        case 'lagranjita':
+          data = await fetchLaGranjita(this.loteriaEmail, this.loteriaPassword, dayStr.replace(/-/g, ''));
+          break;
+      }
+      if (!data) continue;
+      for (const time of game.schedule) {
+        let extracted = null;
+        switch (game.source) {
+          case 'lottoactivo':
+            extracted = this._extractLottoActivoResult(data, game.id, time);
+            break;
+          case 'guacharito':
+            extracted = this._extractGuacharitoResult(data, time);
+            break;
+          case 'lagranjita':
+            extracted = this._extractLoteriaResult(data, time);
+            break;
+        }
+        if (extracted) {
+          await this.db.guardarResultado(game.id, dayStr, time, extracted);
+          results.push({ game: game.id, time, status: 'completed' });
+        }
+      }
+    }
+    return results;
+  }
+
   getResults() {
     const today = this._getTodayStr();
     if (!this.cache[today]) return [];

@@ -214,6 +214,18 @@ app.post('/api/animalitos/migrate', async (req, res) => {
   }
 });
 
+app.post('/api/animalitos/refetch', async (req, res) => {
+  if (!db) return res.status(503).json({ error: 'Base de datos no disponible' });
+  const fecha = req.query.fecha;
+  if (!fecha) return res.status(400).json({ error: 'Se requiere ?fecha=YYYY-MM-DD' });
+  try {
+    const saved = await animalitos.refetchDate(fecha);
+    res.json({ success: true, fecha, saved: saved.length, results: saved });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.get('/api/debug/lotto-page', async (req, res) => {
   const axios = (await import('axios')).default;
   const cheerio = await import('cheerio');
