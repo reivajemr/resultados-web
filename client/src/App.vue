@@ -18,7 +18,7 @@
         <h2>Animalitos</h2>
         <div class="date-nav">
           <button class="btn-nav" @click="prevDay" :disabled="loading">&larr;</button>
-          <input type="date" class="date-input" v-model="selectedDate" />
+          <input type="date" class="date-input" :value="selectedDate" @change="onDateChange" />
           <button class="btn-nav" @click="nextDay" :disabled="loading || selectedDate >= today">&rarr;</button>
           <button v-if="isHistorical" class="btn-today" @click="goToday">Hoy</button>
         </div>
@@ -44,6 +44,11 @@ const today = ref(new Date().toISOString().split('T')[0])
 async function refresh() {
   await fetchAll()
   lastUpdate.value = new Date()
+}
+
+function onDateChange(e) {
+  goToDate(e.target.value)
+  refresh()
 }
 
 onMounted(() => {

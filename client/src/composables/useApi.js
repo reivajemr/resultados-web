@@ -1,4 +1,4 @@
-import { ref, watch } from 'vue'
+import { ref } from 'vue'
 
 export function useApi() {
   const inh = ref({ program: [], races: [], isRunning: false, lastPoll: null })
@@ -44,13 +44,9 @@ export function useApi() {
     await Promise.all([fetchINH(), fetchAnimalitos()])
   }
 
-  watch(selectedDate, () => {
-    isHistorical.value = selectedDate.value !== todayStr()
-    fetchAnimalitos()
-  })
-
   function goToDate(date) {
     selectedDate.value = date
+    isHistorical.value = date !== todayStr()
   }
 
   function goToday() {
