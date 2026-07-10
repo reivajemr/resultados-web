@@ -17,10 +17,10 @@
       <div class="animalitos-header">
         <h2>Animalitos</h2>
         <div class="date-nav">
-          <button class="btn-nav" @click="prevDay" :disabled="loading">&larr;</button>
-          <input type="date" class="date-input" :value="selectedDate" @change="onDateChange" />
-          <button class="btn-nav" @click="nextDay" :disabled="loading || selectedDate >= today">&rarr;</button>
-          <button v-if="isHistorical" class="btn-today" @click="goToday">Hoy</button>
+          <button class="btn-nav" @click="prevDay(); refresh()" :disabled="loading">&larr;</button>
+          <span class="date-label">{{ selectedDate }}</span>
+          <button class="btn-nav" @click="nextDay(); refresh()" :disabled="loading || selectedDate >= todayStr">&rarr;</button>
+          <button v-if="isHistorical" class="btn-today" @click="goToday(); refresh()">Hoy</button>
         </div>
       </div>
       <div class="animalitos-grid">
@@ -39,16 +39,11 @@ import StatusBar from './components/StatusBar.vue'
 
 const { inh, animalitos, loading, selectedDate, isHistorical, fetchAll, goToDate, goToday, prevDay, nextDay } = useApi()
 const lastUpdate = ref(null)
-const today = ref(new Date().toISOString().split('T')[0])
+const todayStr = new Date().toISOString().split('T')[0]
 
 async function refresh() {
   await fetchAll()
   lastUpdate.value = new Date()
-}
-
-function onDateChange(e) {
-  goToDate(e.target.value)
-  refresh()
 }
 
 onMounted(() => {
@@ -75,6 +70,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
 .btn-nav { padding: 4px 10px; background: #1a1a2e; color: #fff; border: none; border-radius: 4px; cursor: pointer; font-size: 0.9rem; }
 .btn-nav:disabled { opacity: 0.4; cursor: not-allowed; }
 .date-input { padding: 4px 8px; border: 1px solid #ccc; border-radius: 4px; font-size: 0.85rem; }
+.date-label { font-size: 0.95rem; font-weight: 600; color: #1a1a2e; min-width: 100px; text-align: center; }
 .btn-today { padding: 4px 12px; background: #e8eaf6; color: #1a1a2e; border: 1px solid #c5cae9; border-radius: 4px; cursor: pointer; font-size: 0.8rem; }
 .animalitos-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(350px, 1fr)); gap: 16px; }
 </style>
