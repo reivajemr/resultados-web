@@ -5,12 +5,13 @@ export function useApi() {
   const animalitos = ref([])
   const loading = ref(false)
   const error = ref(null)
-  const selectedDate = ref(new Date().toISOString().split('T')[0])
+  const selectedDate = ref(vetTodayStr())
   const isHistorical = ref(false)
   const debugUrl = ref('')
 
-  function todayStr() {
-    return new Date().toISOString().split('T')[0]
+  function vetTodayStr() {
+    const d = new Date(Date.now() - 4 * 3600 * 1000)
+    return d.toISOString().split('T')[0]
   }
 
   async function fetchINH() {
@@ -27,7 +28,7 @@ export function useApi() {
     try {
       loading.value = true
       animalitos.value = []
-      const url = selectedDate.value === todayStr()
+      const url = selectedDate.value === vetTodayStr()
         ? '/api/animalitos'
         : `/api/animalitos/historial?fecha=${selectedDate.value}`
       debugUrl.value = url
@@ -49,11 +50,11 @@ export function useApi() {
 
   function goToDate(date) {
     selectedDate.value = date
-    isHistorical.value = date !== todayStr()
+    isHistorical.value = date !== vetTodayStr()
   }
 
   function goToday() {
-    goToDate(todayStr())
+    goToDate(vetTodayStr())
   }
 
   function prevDay() {
@@ -65,7 +66,7 @@ export function useApi() {
   function nextDay() {
     const d = new Date(selectedDate.value)
     d.setDate(d.getDate() + 1)
-    const today = todayStr()
+    const today = vetTodayStr()
     if (d.toISOString().split('T')[0] > today) return
     goToDate(d.toISOString().split('T')[0])
   }

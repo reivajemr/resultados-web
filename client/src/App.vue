@@ -19,7 +19,7 @@
         <div class="date-nav">
           <button class="btn-nav" @click="prevDay(); refresh()" :disabled="loading">&larr;</button>
           <span class="date-label">{{ selectedDate }}</span>
-          <button class="btn-nav" @click="nextDay(); refresh()" :disabled="loading || selectedDate >= todayStr">&rarr;</button>
+          <button class="btn-nav" @click="nextDay(); refresh()" :disabled="loading || !isHistorical">&rarr;</button>
           <button v-if="isHistorical" class="btn-today" @click="goToday(); refresh()">Hoy</button>
         </div>
         <div class="debug-url" v-if="debugUrl">{{ debugUrl }}</div>
@@ -40,7 +40,6 @@ import StatusBar from './components/StatusBar.vue'
 
 const { inh, animalitos, loading, selectedDate, isHistorical, debugUrl, fetchAll, goToDate, goToday, prevDay, nextDay } = useApi()
 const lastUpdate = ref(null)
-const todayStr = new Date().toISOString().split('T')[0]
 
 async function refresh() {
   await fetchAll()
