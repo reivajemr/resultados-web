@@ -18,41 +18,55 @@ const ACTIVO_GAMES = {
 /* ───── Lotto Activo (token-based) ───── */
 
 async function obtenerTokens(juego) {
-  const { data: html } = await axios.get(`${LOTTO_ACTIVO_BASE}/resultados/${juego}/`, {
-    headers: { 'User-Agent': USER_AGENT }
-  });
-  const $ = cheerio.load(html);
-  const scripts = $('script').map((_, el) => $(el).html()).get();
-  const tokens = new Set();
-  for (const s of scripts) {
-    if (!s) continue;
-    const matches = s.match(/'option':'([^']+)'/g);
-    if (matches) matches.forEach(m => {
-      const opt = m.match(/'option':'([^']+)'/)[1];
-      tokens.add(opt);
+  try {
+    const { data: html } = await axios.get(`${LOTTO_ACTIVO_BASE}/resultados/${juego}/`, {
+      headers: { 'User-Agent': USER_AGENT },
+      timeout: 15000
     });
+    const $ = cheerio.load(html);
+    const scripts = $('script').map((_, el) => $(el).html()).get();
+    const tokens = new Set();
+    for (const s of scripts) {
+      if (!s) continue;
+      const matches = s.match(/'option':'([^']+)'/g);
+      if (matches) matches.forEach(m => {
+        const opt = m.match(/'option':'([^']+)'/)[1];
+        tokens.add(opt);
+      });
+    }
+    return [...tokens];
+  } catch {
+    return [];
   }
-  return [...tokens];
 }
 
 async function postOption(option, loteria, fecha = null) {
   const params = new URLSearchParams({ option, loteria });
   if (fecha) params.append('fecha', fecha);
-  const { data } = await axios.post(LOTTO_ACTIVO_API, params.toString(), {
-    headers: {
-      'Content-Type': 'application/x-www-form-urlencoded',
-      'User-Agent': USER_AGENT
-    },
-    timeout: 15000
-  });
-  return data?.status && data?.datos?.length ? data.datos : null;
+  try {
+    const resp = await axios.post(LOTTO_ACTIVO_API, params.toString(), {
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'User-Agent': USER_AGENT,
+        'Referer': `${LOTTO_ACTIVO_BASE}/resultados/${loteria}/`,
+        'Origin': LOTTO_ACTIVO_BASE
+      },
+      timeout: 15000,
+      validateStatus: status => status < 500
+    });
+    return resp.data?.status && resp.data?.datos?.length ? resp.data.datos : null;
+  } catch {
+    return null;
+  }
 }
 
 export async function fetchLottoActivo(gameId, date) {
   const path = ACTIVO_GAMES[gameId];
-  if (!path) throw new Error(`Juego desconocido: ${gameId}`);
+  if (!path) return [];
 
   const tokens = await obtenerTokens(path);
+  if (tokens.length === 0) return [];
+
   const dataTokens = [];
 
   for (const opt of tokens) {
