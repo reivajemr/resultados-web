@@ -22,6 +22,7 @@
           <button class="btn-nav" @click="nextDay(); refresh()" :disabled="loading || selectedDate >= todayStr">&rarr;</button>
           <button v-if="isHistorical" class="btn-today" @click="goToday(); refresh()">Hoy</button>
         </div>
+        <div class="debug-url" v-if="debugUrl">{{ debugUrl }}</div>
       </div>
       <div class="animalitos-grid">
         <AnimalitosPanel v-for="game in animalitos" :key="game.id" :game="game" />
@@ -37,7 +38,7 @@ import INHPanel from './components/INHPanel.vue'
 import AnimalitosPanel from './components/AnimalitosPanel.vue'
 import StatusBar from './components/StatusBar.vue'
 
-const { inh, animalitos, loading, selectedDate, isHistorical, fetchAll, goToDate, goToday, prevDay, nextDay } = useApi()
+const { inh, animalitos, loading, selectedDate, isHistorical, debugUrl, fetchAll, goToDate, goToday, prevDay, nextDay } = useApi()
 const lastUpdate = ref(null)
 const todayStr = new Date().toISOString().split('T')[0]
 
@@ -72,5 +73,6 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
 .date-input { padding: 4px 8px; border: 1px solid #ccc; border-radius: 4px; font-size: 0.85rem; }
 .date-label { font-size: 0.95rem; font-weight: 600; color: #1a1a2e; min-width: 100px; text-align: center; }
 .btn-today { padding: 4px 12px; background: #e8eaf6; color: #1a1a2e; border: 1px solid #c5cae9; border-radius: 4px; cursor: pointer; font-size: 0.8rem; }
+.debug-url { font-size: 0.75rem; color: #999; margin-bottom: 8px; font-family: monospace; }
 .animalitos-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(350px, 1fr)); gap: 16px; }
 </style>

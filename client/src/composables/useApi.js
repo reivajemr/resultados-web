@@ -7,6 +7,7 @@ export function useApi() {
   const error = ref(null)
   const selectedDate = ref(new Date().toISOString().split('T')[0])
   const isHistorical = ref(false)
+  const debugUrl = ref('')
 
   function todayStr() {
     return new Date().toISOString().split('T')[0]
@@ -28,6 +29,7 @@ export function useApi() {
       const url = selectedDate.value === todayStr()
         ? '/api/animalitos'
         : `/api/animalitos/historial?fecha=${selectedDate.value}`
+      debugUrl.value = url
       const res = await fetch(url)
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       const data = await res.json()
@@ -67,5 +69,5 @@ export function useApi() {
     goToDate(d.toISOString().split('T')[0])
   }
 
-  return { inh, animalitos, loading, error, selectedDate, isHistorical, fetchAll, goToDate, goToday, prevDay, nextDay }
+  return { inh, animalitos, loading, error, selectedDate, isHistorical, debugUrl, fetchAll, goToDate, goToday, prevDay, nextDay }
 }
