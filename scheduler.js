@@ -131,15 +131,26 @@ class AnimalitosScheduler {
     return results;
   }
 
+  _parseTime24(timeStr) {
+    const parts = timeStr.match(/(\d+):(\d+)\s*(AM|PM)?/i);
+    if (!parts) return null;
+    let h = parseInt(parts[1]);
+    const m = parseInt(parts[2]);
+    const ampm = parts[3]?.toUpperCase();
+    if (ampm === 'PM' && h < 12) h += 12;
+    if (ampm === 'AM' && h === 12) h = 0;
+    return { h, m };
+  }
+
   _extractLottoActivoResult(data, gameId, time) {
     if (!data || data.length === 0) return null;
+    const [tH, tM] = time.split(':').map(Number);
     for (const item of data) {
       const timeStr = item.time_s || item.time || item.result_time;
       if (!timeStr) continue;
-      const sHora = timeStr.split(' ')[0] || timeStr;
-      const [sH, sM] = sHora.split(':').map(Number);
-      const [tH, tM] = time.split(':').map(Number);
-      if (sH === tH && sM === tM) {
+      const parsed = this._parseTime24(timeStr);
+      if (!parsed) continue;
+      if (parsed.h === tH && parsed.m === tM) {
         return {
           number: item.number_animal || item.number || item.giveaway_results_number_literal,
           animal: item.name_animal || item.animal || item.giveaway_results_literal,
