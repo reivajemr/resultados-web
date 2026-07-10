@@ -1,6 +1,5 @@
 import { fetchLottoActivo, fetchGuacharito, fetchLaGranjita, fetchLoteriaDeHoy } from './proxies.js';
 
-const VET_OFFSET = -4 * 60 * 60 * 1000;
 const DRAW_DELAY_MS = 5 * 60 * 1000;
 const RETRY_INTERVAL_MS = 5 * 60 * 1000;
 const MAX_RETRIES = 3;
@@ -55,7 +54,7 @@ class AnimalitosScheduler {
   }
 
   _getTodayStr() {
-    const d = new Date(Date.now() + VET_OFFSET);
+    const d = new Date();
     return d.toISOString().split('T')[0];
   }
 
@@ -65,14 +64,10 @@ class AnimalitosScheduler {
 
   _parseTime(timeStr) {
     const [h, m] = timeStr.split(':').map(Number);
-    const nowVET = new Date(Date.now() + VET_OFFSET);
-    const utcMs = Date.UTC(
-      nowVET.getUTCFullYear(),
-      nowVET.getUTCMonth(),
-      nowVET.getUTCDate(),
-      h, m, 0, 0
-    );
-    return new Date(utcMs - VET_OFFSET);
+    const now = new Date();
+    const d = new Date(now);
+    d.setHours(h, m, 0, 0);
+    return d;
   }
 
   _getInitialStateForGame(gameId) {
