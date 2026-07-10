@@ -204,6 +204,16 @@ app.get('/api/animalitos/historial', async (req, res) => {
   }
 });
 
+app.post('/api/animalitos/migrate', async (req, res) => {
+  if (!db) return res.status(503).json({ error: 'Base de datos no disponible' });
+  try {
+    await animalitos._saveMemoryCacheToDB();
+    res.json({ success: true, message: 'Caché en memoria migrada a DB' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.get('/api/debug/lotto-page', async (req, res) => {
   const axios = (await import('axios')).default;
   const cheerio = await import('cheerio');

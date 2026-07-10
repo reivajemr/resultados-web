@@ -283,9 +283,31 @@ class AnimalitosScheduler {
   async start() {
     if (this.db) {
       await this._loadFromDB();
+      await this._saveMemoryCacheToDB();
     }
     this.tick();
     this.intervalId = setInterval(() => this.tick(), RETRY_INTERVAL_MS);
+  }
+
+  async _saveMemoryCacheToDB() {
+    const now = Date.now();
+    for (const dayKey of Object.keys(this.state)) {
+      for (const game of GAMES) {
+        const state = this.state[dayKey]?.[game.id];
+        const dayCache = this.cache[dayKey]?.[game.id];
+        if (!state || !dayCache) continue;
+        for (const time of game.schedule) {
+          const s = state[time];
+          if (s?.status === 'completed' && s?.result) {
+            try {
+              await this.db.guardarResultado(game.id, dayKey, time, s.result);
+            } catch (e) {
+              console.error(`[DB] Error guardando caché ${game.id} ${dayKey} ${time}:`, e.message);
+            }
+          }
+        }
+      }
+    }
   }
 
   async _loadFromDB() {
