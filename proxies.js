@@ -17,13 +17,20 @@ const ACTIVO_GAMES = {
 
 /* ───── Lotto Activo (token-based) ───── */
 
+let activoSession = { cookie: null };
+
 async function obtenerTokens(juego) {
   try {
-    const { data: html } = await axios.get(`${LOTTO_ACTIVO_BASE}/resultados/${juego}/`, {
+    const resp = await axios.get(`${LOTTO_ACTIVO_BASE}/resultados/${juego}/`, {
       headers: { 'User-Agent': USER_AGENT },
       timeout: 15000
     });
-    const $ = cheerio.load(html);
+    const setCookie = resp.headers['set-cookie'];
+    if (setCookie) {
+      const phpsessid = setCookie.find(c => c.startsWith('PHPSESSID'));
+      if (phpsessid) activoSession.cookie = phpsessid.split(';')[0];
+    }
+    const $ = cheerio.load(resp.data);
     const scripts = $('script').map((_, el) => $(el).html()).get();
     const tokens = new Set();
     for (const s of scripts) {
@@ -43,17 +50,24 @@ async function obtenerTokens(juego) {
 async function postOption(option, loteria, fecha = null) {
   const params = new URLSearchParams({ option, loteria });
   if (fecha) params.append('fecha', fecha);
+  const headers = {
+    'Content-Type': 'application/x-www-form-urlencoded',
+    'User-Agent': USER_AGENT,
+    'Referer': `${LOTTO_ACTIVO_BASE}/resultados/${loteria}/`,
+    'Origin': LOTTO_ACTIVO_BASE
+  };
+  if (activoSession.cookie) headers['Cookie'] = activoSession.cookie;
   try {
     const resp = await axios.post(LOTTO_ACTIVO_API, params.toString(), {
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-        'User-Agent': USER_AGENT,
-        'Referer': `${LOTTO_ACTIVO_BASE}/resultados/${loteria}/`,
-        'Origin': LOTTO_ACTIVO_BASE
-      },
+      headers,
       timeout: 15000,
       validateStatus: status => status < 500
     });
+    const setCookie = resp.headers['set-cookie'];
+    if (setCookie) {
+      const phpsessid = setCookie.find(c => c.startsWith('PHPSESSID'));
+      if (phpsessid) activoSession.cookie = phpsessid.split(';')[0];
+    }
     return resp.data?.status && resp.data?.datos?.length ? resp.data.datos : null;
   } catch {
     return null;
