@@ -1,7 +1,8 @@
 <template>
   <div class="game-card">
     <h3 class="game-title">{{ title }}</h3>
-    <table class="draw-table">
+    <div v-if="draws.length === 0" class="empty-state">Sin resultados para esta fecha</div>
+    <table v-else class="draw-table">
       <thead>
         <tr>
           <th>Hora</th>
@@ -67,6 +68,7 @@ function resultColor(draw) {
 <style scoped>
 .game-card { background: #fff; border: 1px solid #e0e0e0; border-radius: 8px; overflow: hidden; }
 .game-title { font-size: 0.95rem; color: #1a1a2e; padding: 10px 12px; background: #fafafa; border-bottom: 1px solid #eee; }
+.empty-state { padding: 20px 12px; text-align: center; color: #999; font-size: 0.85rem; }
 .draw-table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
 .draw-table th { text-align: left; padding: 6px 12px; background: #f5f5f5; color: #666; font-weight: 500; font-size: 0.75rem; text-transform: uppercase; }
 .draw-table td { padding: 6px 12px; border-top: 1px solid #f0f0f0; }

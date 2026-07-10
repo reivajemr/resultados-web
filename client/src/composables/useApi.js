@@ -26,6 +26,7 @@ export function useApi() {
   async function fetchAnimalitos() {
     try {
       loading.value = true
+      animalitos.value = []
       const url = selectedDate.value === todayStr()
         ? '/api/animalitos'
         : `/api/animalitos/historial?fecha=${selectedDate.value}`
