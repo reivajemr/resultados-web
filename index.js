@@ -155,6 +155,18 @@ app.get('/api/animalitos', (req, res) => {
   });
 });
 
+app.get('/api/debug/lotto', async (req, res) => {
+  const { fetchLottoActivo } = await import('./proxies.js');
+  const juego = req.query.juego || 'lotto_activo';
+  const fecha = req.query.fecha || new Date(Date.now() - 4 * 3600000).toISOString().split('T')[0];
+  try {
+    const data = await fetchLottoActivo(juego, fecha);
+    res.json({ juego, fecha, data });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.get('/api/status', (req, res) => {
   res.json({
     uptime: process.uptime(),
