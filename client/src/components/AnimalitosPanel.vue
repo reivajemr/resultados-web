@@ -47,7 +47,12 @@ function resultLabel(draw) {
     if (draw.result.animal) {
       return `${draw.result.number} - ${draw.result.animal}`
     }
-    return `#${draw.result.number}`
+    if (draw.result.number) {
+      return `#${draw.result.number}`
+    }
+    if (draw.result.raw?.resultado1) {
+      return `${draw.result.raw.resultado1}`
+    }
   }
   return ''
 }

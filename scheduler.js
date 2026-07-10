@@ -145,22 +145,27 @@ class AnimalitosScheduler {
   _extractLottoActivoResult(data, gameId, time) {
     if (!data || data.length === 0) return null;
     const [tH, tM] = time.split(':').map(Number);
+    const found = [];
     for (const item of data) {
       const timeStr = item.time_s || item.time || item.result_time;
       if (!timeStr) continue;
       const parsed = this._parseTime24(timeStr);
       if (!parsed) continue;
       if (parsed.h === tH && parsed.m === tM) {
-        return {
-          number: item.number_animal || item.number || item.giveaway_results_number_literal,
-          animal: item.name_animal || item.animal || item.giveaway_results_literal,
-          color: item.color_animal || item.giveaway_results_color,
-          time: timeStr,
-          raw: item
-        };
+        found.push(item);
       }
     }
-    return null;
+    if (found.length === 0) return null;
+    const item = found[0];
+    const number = item.number_animal || item.number || item.giveaway_results_number_literal || item.resultado1;
+    const animal = item.name_animal || item.animal || item.giveaway_results_literal;
+    return {
+      number,
+      animal,
+      color: item.color_animal || item.giveaway_results_color,
+      time: item.time_s || item.time || item.result_time,
+      raw: item
+    };
   }
 
   _extractGuacharitoResult(data, time) {
