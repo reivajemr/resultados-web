@@ -104,21 +104,18 @@ export async function fetchLottoActivo(gameId, date) {
   const tokens = await obtenerTokens(path);
   if (tokens.length === 0) return [];
 
-  const dataTokens = [];
-
+  const results = [];
   for (const opt of tokens) {
     const info = await postOption(opt, path);
-    if (!info || !info[0]?.tipojuego) {
-      dataTokens.push(opt);
-    }
-  }
-
-  const results = [];
-  for (const opt of dataTokens) {
+    if (info && info[0]?.tipojuego) continue;
     const data = await postOption(opt, path, date);
     if (data) {
       for (const item of data) {
-        if (item.resultados) results.push(item);
+        if (item.resultados) {
+          for (const r of item.resultados) results.push(r);
+        } else {
+          results.push(item);
+        }
       }
     }
   }
