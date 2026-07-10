@@ -2,6 +2,8 @@ import 'dotenv/config';
 import express from 'express';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import rateLimit from 'express-rate-limit';
+import helmet from 'helmet';
 import { INHScraper } from './inh-scraper.js';
 import AnimalitosScheduler from './scheduler.js';
 import * as dbModule from './db.js';
@@ -9,6 +11,10 @@ import * as dbModule from './db.js';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
 const PORT = process.env.PORT || 3000;
+
+const HTTP_USER = process.env.HTTP_USER;
+const HTTP_PASS = process.env.HTTP_PASS;
+const API_KEY = process.env.API_KEY;
 
 const db = process.env.DATABASE_URL ? dbModule : null;
 if (db) {
@@ -144,6 +150,40 @@ console.log('[Animalitos] Scheduler iniciado');
 /* ───── INH schedule ───── */
 
 scheduleINHDay();
+
+/* ───── Security middleware ───── */
+
+app.use(helmet());
+
+const globalLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 200,
+  message: { error: 'Demasiados requests, intenta en 15 min' }
+});
+app.use(globalLimiter);
+
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 20,
+  skipSuccessfulRequests: true,
+  message: { error: 'Demasiados intentos de autenticación, intenta en 15 min' }
+});
+app.use(authLimiter);
+
+function requireAuth(req, res, next) {
+  if (req.path === '/health') return next();
+  const auth = req.headers['authorization'];
+  if (auth && auth.startsWith('Basic ')) {
+    const decoded = Buffer.from(auth.slice(6), 'base64').toString();
+    const [user, pass] = decoded.split(':');
+    if (user === HTTP_USER && pass === HTTP_PASS) return next();
+  }
+  const key = req.headers['x-api-key'] || req.query.api_key;
+  if (key && key === API_KEY) return next();
+  res.set('WWW-Authenticate', 'Basic realm="Resultados"');
+  res.status(401).json({ error: 'No autorizado' });
+}
+app.use(requireAuth);
 
 /* ───── API Routes ───── */
 
@@ -285,6 +325,50 @@ app.get('/api/status', (req, res) => {
     }
   });
 });
+
+/* ───── External API (limpo) ───── */
+
+app.get('/api/v1/resultados', async (req, res) => {
+  const fecha = req.query.fecha || animalitos._getTodayStr();
+  const GAMES_LIST = (await import('./scheduler.js')).GAMES;
+  let games;
+  if (fecha === animalitos._getTodayStr()) {
+    games = animalitos.getResults();
+  } else if (db) {
+    games = [];
+    for (const g of GAMES_LIST) {
+      const rows = await db.cargarResultados(g.id, fecha);
+      games.push({ id: g.id, name: g.name, draws: (rows || []).map(r => ({
+        time: r.hora, result: r.datos, status: r.estado
+      })) });
+    }
+  } else {
+    return res.status(503).json({ error: 'DB no disponible para fechas históricas' });
+  }
+  res.json({
+    date: fecha,
+    animalitos: games.map(g => ({
+      game: g.name,
+      draws: g.draws.filter(d => d.result).map(d => ({
+        time: d.time,
+        number: d.result.number,
+        animal: d.result.animal,
+        color: d.result.color || undefined
+      }))
+    })),
+    inh: inhProgramCache ? {
+      races: (Array.isArray(inhProgramCache) ? inhProgramCache : []).map(r => ({
+        number: r.number || r.raceNumber,
+        time: r.raceTime,
+        horses: (r.horses || []).map(h => ({
+          number: h.number, name: h.name, jockey: h.jockey
+        }))
+      }))
+    } : null
+  });
+});
+
+app.get('/health', (req, res) => res.json({ status: 'ok' }));
 
 /* ───── Static files ───── */
 

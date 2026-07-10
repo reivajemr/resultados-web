@@ -5,6 +5,7 @@ const LOTTO_ACTIVO_BASE = 'https://www.lottoactivo.com';
 const LOTTO_ACTIVO_API = `${LOTTO_ACTIVO_BASE}/core/process.php`;
 const GUACHARITO_API = 'https://api.lotterly.co/v1/results/el-guacharito-millonario/';
 const LOTERIA_SECURE = 'https://secure.loteriadehoy.com';
+const LAGRAJITA_API = 'https://lagranjita.com/api/results.json';
 
 const USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36';
 
@@ -134,6 +135,44 @@ export async function fetchGuacharito(date) {
   return data;
 }
 
+/* ───── Helper: 12h → 24h ───── */
+
+function _parse12to24(time12) {
+  const match = time12.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
+  if (!match) return null;
+  let h = parseInt(match[1]);
+  const m = parseInt(match[2]);
+  const ampm = match[3].toUpperCase();
+  if (ampm === 'PM' && h < 12) h += 12;
+  if (ampm === 'AM' && h === 12) h = 0;
+  return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
+}
+
+/* ───── La Granjita (primary: lagranjita.com, fallback: LoteriaDeHoy) ───── */
+
+export async function fetchLaGranjitaFromAPI(date) {
+  const { data } = await axios.get(LAGRAJITA_API, {
+    params: { date, productId: 1 },
+    headers: { 'User-Agent': USER_AGENT },
+    timeout: 15000
+  });
+  const rows = data?.['LA GRANJITA'];
+  if (!rows?.length) return null;
+  return rows.map(r => ({
+    result_time: _parse12to24(r.lotery_hour),
+    giveaway_results_number_literal: r.result_value,
+    giveaway_results_literal: r.result_name,
+    giveaway_results_color: null,
+    giveaway_results_image: null,
+    Literals: null,
+    raw: r
+  }));
+}
+
+export async function fetchLaGranjitaFallback(email, password, date) {
+  return fetchLoteriaDeHoy(email, password, date, 8, 22);
+}
+
 /* ───── LoteriaDeHoy (session-based) ───── */
 
 const loteriaSession = {
@@ -184,8 +223,18 @@ export async function fetchLoteriaDeHoy(email, password, date, oid, pid) {
   return data;
 }
 
-/* ───── La Granjita (via LoteriaDeHoy: oid=8, pid=22) ───── */
+/* ───── La Granjita (legacy, kept for backward compat) ───── */
 
 export async function fetchLaGranjita(email, password, date) {
   return fetchLoteriaDeHoy(email, password, date, 8, 22);
+}
+
+/* ───── Fallbacks via LoteriaDeHoy ───── */
+
+export async function fetchLottoActivoFallback(email, password, date) {
+  return fetchLoteriaDeHoy(email, password, date, 1, 1);
+}
+
+export async function fetchGuacharitoFallback(email, password, date) {
+  return fetchLoteriaDeHoy(email, password, date, 6, 23);
 }

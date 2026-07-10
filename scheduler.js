@@ -1,4 +1,11 @@
-import { fetchLottoActivo, fetchGuacharito, fetchLaGranjita, fetchLoteriaDeHoy } from './proxies.js';
+import {
+  fetchLottoActivo,
+  fetchGuacharito,
+  fetchLaGranjitaFromAPI,
+  fetchLaGranjitaFallback,
+  fetchLottoActivoFallback,
+  fetchGuacharitoFallback
+} from './proxies.js';
 
 const VET_OFFSET = -4 * 60 * 60 * 1000;
 const DRAW_DELAY_MS = 5 * 60 * 1000;
@@ -113,17 +120,27 @@ class AnimalitosScheduler {
 
   async _executeFetch(game) {
     const today = this._getTodayStr();
+    const dateCompact = today.replace(/-/g, '');
     let results;
 
     switch (game.source) {
       case 'lottoactivo':
         results = await fetchLottoActivo(game.id, today);
+        if (!results?.length) {
+          results = await fetchLottoActivoFallback(this.loteriaEmail, this.loteriaPassword, dateCompact);
+        }
         break;
       case 'guacharito':
         results = await fetchGuacharito(today);
+        if (!results?.length) {
+          results = await fetchGuacharitoFallback(this.loteriaEmail, this.loteriaPassword, dateCompact);
+        }
         break;
       case 'lagranjita':
-        results = await fetchLaGranjita(this.loteriaEmail, this.loteriaPassword, today.replace(/-/g, ''));
+        results = await fetchLaGranjitaFromAPI(today);
+        if (!results?.length) {
+          results = await fetchLaGranjitaFallback(this.loteriaEmail, this.loteriaPassword, dateCompact);
+        }
         break;
       default:
         return null;
@@ -346,17 +363,21 @@ class AnimalitosScheduler {
   async refetchDate(dayStr) {
     if (!this.db) return [];
     const results = [];
+    const dateCompact = dayStr.replace(/-/g, '');
     for (const game of GAMES) {
       let data = null;
       switch (game.source) {
         case 'lottoactivo':
           data = await fetchLottoActivo(game.id, dayStr);
+          if (!data?.length) data = await fetchLottoActivoFallback(this.loteriaEmail, this.loteriaPassword, dateCompact);
           break;
         case 'guacharito':
           data = await fetchGuacharito(dayStr);
+          if (!data?.length) data = await fetchGuacharitoFallback(this.loteriaEmail, this.loteriaPassword, dateCompact);
           break;
         case 'lagranjita':
-          data = await fetchLaGranjita(this.loteriaEmail, this.loteriaPassword, dayStr.replace(/-/g, ''));
+          data = await fetchLaGranjitaFromAPI(dayStr);
+          if (!data?.length) data = await fetchLaGranjitaFallback(this.loteriaEmail, this.loteriaPassword, dateCompact);
           break;
       }
       if (!data) continue;
