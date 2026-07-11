@@ -139,7 +139,10 @@ class AnimalitosScheduler {
       case 'lagranjita':
         results = await fetchLaGranjitaFromAPI(today);
         if (!results?.length) {
+          console.log(`[${game.id}] Primary (lagranjita.com) sin datos, usando fallback LoteriaDeHoy`);
           results = await fetchLaGranjitaFallback(this.loteriaEmail, this.loteriaPassword, dateCompact);
+        } else {
+          console.log(`[${game.id}] OK: ${results.length} resultados desde lagranjita.com`);
         }
         break;
       default:
