@@ -151,22 +151,27 @@ function _parse12to24(time12) {
 /* ───── La Granjita (primary: lagranjita.com, fallback: LoteriaDeHoy) ───── */
 
 export async function fetchLaGranjitaFromAPI(date) {
-  const { data } = await axios.get(LAGRAJITA_API, {
-    params: { date, productId: 1 },
-    headers: { 'User-Agent': USER_AGENT },
-    timeout: 15000
-  });
-  const rows = data?.['LA GRANJITA'];
-  if (!rows?.length) return null;
-  return rows.map(r => ({
-    result_time: _parse12to24(r.lotery_hour),
-    giveaway_results_number_literal: r.result_value,
-    giveaway_results_literal: r.result_name,
-    giveaway_results_color: null,
-    giveaway_results_image: null,
-    Literals: null,
-    raw: r
-  }));
+  try {
+    const { data } = await axios.get(LAGRAJITA_API, {
+      params: { date, productId: 1 },
+      headers: { 'User-Agent': USER_AGENT },
+      timeout: 15000
+    });
+    const rows = data?.['LA GRANJITA'];
+    if (!rows?.length) return null;
+    return rows.map(r => ({
+      result_time: _parse12to24(r.lotery_hour),
+      giveaway_results_number_literal: r.result_value,
+      giveaway_results_literal: r.result_name,
+      giveaway_results_color: null,
+      giveaway_results_image: null,
+      Literals: null,
+      raw: r
+    }));
+  } catch (e) {
+    console.error(`[lagranjita.com] Error: ${e.message}`);
+    return null;
+  }
 }
 
 export async function fetchLaGranjitaFallback(email, password, date) {

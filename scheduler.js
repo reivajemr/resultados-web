@@ -368,47 +368,51 @@ class AnimalitosScheduler {
     const results = [];
     const dateCompact = dayStr.replace(/-/g, '');
     for (const game of GAMES) {
-      const existing = await this.db.cargarResultados(game.id, dayStr);
-      if (existing?.length > 0) {
-        results.push({ game: game.id, status: 'already_exists' });
-        continue;
-      }
-      let data = null;
-      switch (game.source) {
-        case 'lottoactivo':
-          data = await fetchLottoActivo(game.id, dayStr);
-          if (!data?.length) data = await fetchLottoActivoFallback(this.loteriaEmail, this.loteriaPassword, dateCompact);
-          break;
-        case 'guacharito':
-          data = await fetchGuacharito(dayStr);
-          if (!data?.length) data = await fetchGuacharitoFallback(this.loteriaEmail, this.loteriaPassword, dateCompact);
-          break;
-        case 'lagranjita':
-          data = await fetchLaGranjitaFromAPI(dayStr);
-          if (!data?.length) data = await fetchLaGranjitaFallback(this.loteriaEmail, this.loteriaPassword, dateCompact);
-          break;
-      }
-      if (!data) {
-        console.log(`[${game.id}] Sin datos de ninguna fuente`);
-        continue;
-      }
-      for (const time of game.schedule) {
-        let extracted = null;
+      try {
+        const existing = await this.db.cargarResultados(game.id, dayStr);
+        if (existing?.length > 0) {
+          results.push({ game: game.id, status: 'already_exists' });
+          continue;
+        }
+        let data = null;
         switch (game.source) {
           case 'lottoactivo':
-            extracted = this._extractLottoActivoResult(data, game.id, time);
+            data = await fetchLottoActivo(game.id, dayStr);
+            if (!data?.length) data = await fetchLottoActivoFallback(this.loteriaEmail, this.loteriaPassword, dateCompact);
             break;
           case 'guacharito':
-            extracted = this._extractGuacharitoResult(data, time);
+            data = await fetchGuacharito(dayStr);
+            if (!data?.length) data = await fetchGuacharitoFallback(this.loteriaEmail, this.loteriaPassword, dateCompact);
             break;
           case 'lagranjita':
-            extracted = this._extractLoteriaResult(data, time);
+            data = await fetchLaGranjitaFromAPI(dayStr);
+            if (!data?.length) data = await fetchLaGranjitaFallback(this.loteriaEmail, this.loteriaPassword, dateCompact);
             break;
         }
-        if (extracted) {
-          await this.db.guardarResultado(game.id, dayStr, time, extracted);
-          results.push({ game: game.id, time, status: 'completed' });
+        if (!data) {
+          console.log(`[${game.id}] Sin datos de ninguna fuente`);
+          continue;
         }
+        for (const time of game.schedule) {
+          let extracted = null;
+          switch (game.source) {
+            case 'lottoactivo':
+              extracted = this._extractLottoActivoResult(data, game.id, time);
+              break;
+            case 'guacharito':
+              extracted = this._extractGuacharitoResult(data, time);
+              break;
+            case 'lagranjita':
+              extracted = this._extractLoteriaResult(data, time);
+              break;
+          }
+          if (extracted) {
+            await this.db.guardarResultado(game.id, dayStr, time, extracted);
+            results.push({ game: game.id, time, status: 'completed' });
+          }
+        }
+      } catch (e) {
+        console.error(`[${game.id}] Error en refetch: ${e.message}`);
       }
     }
     return results;
