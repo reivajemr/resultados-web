@@ -137,12 +137,12 @@ class AnimalitosScheduler {
         }
         break;
       case 'lagranjita':
-        results = await fetchLaGranjitaFromAPI(today);
+        results = await fetchLaGranjitaFallback(this.loteriaEmail, this.loteriaPassword, dateCompact);
         if (!results?.length) {
-          console.log(`[${game.id}] Primary (lagranjita.com) sin datos, usando fallback LoteriaDeHoy`);
-          results = await fetchLaGranjitaFallback(this.loteriaEmail, this.loteriaPassword, dateCompact);
+          console.log(`[${game.id}] Fallback LoteriaDeHoy sin datos, usando lagranjita.com`);
+          results = await fetchLaGranjitaFromAPI(today);
         } else {
-          console.log(`[${game.id}] OK: ${results.length} resultados desde lagranjita.com`);
+          console.log(`[${game.id}] OK: ${results.length} resultados desde LoteriaDeHoy`);
         }
         break;
       default:
@@ -385,8 +385,8 @@ class AnimalitosScheduler {
             if (!data?.length) data = await fetchGuacharitoFallback(this.loteriaEmail, this.loteriaPassword, dateCompact);
             break;
           case 'lagranjita':
-            data = await fetchLaGranjitaFromAPI(dayStr);
-            if (!data?.length) data = await fetchLaGranjitaFallback(this.loteriaEmail, this.loteriaPassword, dateCompact);
+            data = await fetchLaGranjitaFallback(this.loteriaEmail, this.loteriaPassword, dateCompact);
+            if (!data?.length) data = await fetchLaGranjitaFromAPI(dayStr);
             break;
         }
         if (!data) {

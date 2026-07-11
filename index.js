@@ -10,6 +10,7 @@ import * as dbModule from './db.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
+app.set('trust proxy', 1);
 const PORT = process.env.PORT || 3000;
 
 const HTTP_USER = process.env.HTTP_USER;
