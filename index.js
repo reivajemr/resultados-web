@@ -147,6 +147,12 @@ async function runINHDay() {
 await animalitos.start();
 console.log('[Animalitos] Scheduler iniciado');
 
+/* ───── Backfill días recientes ───── */
+
+animalitos.backfillRecentDays(2).catch(e =>
+  console.error('[Backfill] Error:', e.message)
+);
+
 /* ───── INH schedule ───── */
 
 scheduleINHDay();

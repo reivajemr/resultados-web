@@ -403,6 +403,20 @@ class AnimalitosScheduler {
     return results;
   }
 
+  async backfillRecentDays(days = 2) {
+    if (!this.db) return;
+    const today = new Date(Date.now() + VET_OFFSET);
+    for (let i = 1; i <= days; i++) {
+      const d = new Date(today);
+      d.setDate(d.getDate() - i);
+      const dayStr = d.toISOString().split('T')[0];
+      const existing = await this.db.cargarResultados('lotto_activo', dayStr);
+      if (existing && existing.length > 0) continue;
+      console.log(`[Backfill] Recuperando ${dayStr}...`);
+      await this.refetchDate(dayStr);
+    }
+  }
+
   getResults() {
     const today = this._getTodayStr();
     if (!this.cache[today]) return [];
