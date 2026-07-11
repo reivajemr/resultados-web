@@ -365,6 +365,11 @@ class AnimalitosScheduler {
     const results = [];
     const dateCompact = dayStr.replace(/-/g, '');
     for (const game of GAMES) {
+      const existing = await this.db.cargarResultados(game.id, dayStr);
+      if (existing?.length > 0) {
+        results.push({ game: game.id, status: 'already_exists' });
+        continue;
+      }
       let data = null;
       switch (game.source) {
         case 'lottoactivo':
@@ -380,7 +385,10 @@ class AnimalitosScheduler {
           if (!data?.length) data = await fetchLaGranjitaFallback(this.loteriaEmail, this.loteriaPassword, dateCompact);
           break;
       }
-      if (!data) continue;
+      if (!data) {
+        console.log(`[${game.id}] Sin datos de ninguna fuente`);
+        continue;
+      }
       for (const time of game.schedule) {
         let extracted = null;
         switch (game.source) {
@@ -410,8 +418,6 @@ class AnimalitosScheduler {
       const d = new Date(today);
       d.setDate(d.getDate() - i);
       const dayStr = d.toISOString().split('T')[0];
-      const existing = await this.db.cargarResultados('lotto_activo', dayStr);
-      if (existing && existing.length > 0) continue;
       console.log(`[Backfill] Recuperando ${dayStr}...`);
       await this.refetchDate(dayStr);
     }
