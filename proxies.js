@@ -154,7 +154,12 @@ export async function fetchLaGranjitaFromAPI(date) {
   try {
     const { data } = await axios.get(LAGRAJITA_API, {
       params: { date, productId: 1 },
-      headers: { 'User-Agent': USER_AGENT },
+      headers: {
+        'User-Agent': USER_AGENT,
+        'Referer': 'https://lagranjita.com/',
+        'Origin': 'https://lagranjita.com',
+        'Accept': 'application/json, text/plain, */*'
+      },
       timeout: 15000
     });
     const rows = data?.['LA GRANJITA'];
