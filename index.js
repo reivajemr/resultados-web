@@ -249,10 +249,12 @@ app.get('/api/v1/resultados', async (req, res) => {
     })),
     inh: inhData?.races?.length ? {
       races: inhData.races.map(r => ({
-        number: r.number || r.raceNumber,
+        number: r.raceNumber,
         time: r.raceTime,
         horses: (r.horses || []).map(h => ({
-          number: h.number, name: h.name, jockey: h.jockey
+          number: h.programNumber || h.number,
+          name: h.horseName || h.name,
+          jockey: h.jockey
         }))
       }))
     } : null
