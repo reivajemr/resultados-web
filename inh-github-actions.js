@@ -1,5 +1,8 @@
-import puppeteer from 'puppeteer';
+import puppeteer from 'puppeteer-extra';
+import StealthPlugin from 'puppeteer-extra-plugin-stealth';
 import axios from 'axios';
+
+puppeteer.use(StealthPlugin());
 
 const RENDER_URL = process.env.RENDER_URL || 'https://resultados-web.onrender.com';
 const API_KEY = process.env.RENDER_API_KEY;

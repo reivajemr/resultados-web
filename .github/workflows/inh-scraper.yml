@@ -15,7 +15,7 @@ jobs:
         with:
           node-version: 22
       - name: Install dependencies
-        run: npm install puppeteer axios
+        run: npm install puppeteer axios puppeteer-extra puppeteer-extra-plugin-stealth
       - name: Run scraper
         env:
           INH_USER: ${{ secrets.INH_USER }}
