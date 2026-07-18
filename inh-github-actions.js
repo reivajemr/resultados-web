@@ -85,100 +85,90 @@ async function run() {
     console.log('[INH] Post-login title:', await page.title());
     if (DEBUG) await page.screenshot({ path: 'inh-after-login.png', fullPage: true });
 
-    // ── Explore navigation ──
+    // Dump page content after login
+    let pageText = await page.evaluate(() => document.body.innerText.substring(0, 8000));
+    console.log('[INH] Contenido post-login:', pageText.replace(/\n+/g, ' | ').substring(0, 2000));
 
-    // Print all links on the page
-    const links = await page.evaluate(() => {
-      return Array.from(document.querySelectorAll('a')).map(a => ({ href: a.href, text: a.textContent?.trim().substring(0, 60) }));
-    });
-    console.log('[INH] Links disponibles:', JSON.stringify(links.slice(0, 30)));
-
-    // Print menus
-    const menuText = await page.evaluate(() => {
-      const nav = document.querySelector('nav, header, [class*="menu"], [class*="navbar"], [class*="header"]');
-      return nav ? nav.innerText.substring(0, 1000) : 'no nav found';
-    });
-    console.log('[INH] Menú:', menuText.substring(0, 500));
-
-    // ── Navigate to hipismo nacional page ──
-    // Try common race page URLs
-    const urlsToTry = [
-      'https://apuestas.inh.gob.ve/hipismo/nacional',
-      'https://apuestas.inh.gob.ve/apuestas/nacional',
-      'https://apuestas.inh.gob.ve/hipismo',
-      'https://apuestas.inh.gob.ve/hipismo/valencia',
-      'https://apuestas.inh.gob.ve/hipismo/rinconada',
-      'https://apuestas.inh.gob.ve/hipismo/5y6',
-    ];
-
-    let racePageText = '';
-    let racePageUrl = '';
-    for (const url of urlsToTry) {
-      console.log('[INH] Probando:', url);
-      try {
-        await page.goto(url, { waitUntil: 'networkidle2', timeout: 20000 });
-        await new Promise(r => setTimeout(r, 2000));
-        const textLen = (await page.evaluate(() => document.body.innerText.length)) || 0;
-        console.log('[INH]  -> longitud texto:', textLen);
-        if (textLen > 200) {
-          racePageText = await page.evaluate(() => document.body.innerText.substring(0, 5000));
-          racePageUrl = page.url();
-          console.log('[INH] Contenido:', racePageText.replace(/\n+/g, ' | ').substring(0, 1000));
-          if (DEBUG) await page.screenshot({ path: 'inh-' + url.replace(/[^a-z]/g, '') + '.png', fullPage: true });
-          if (textLen > 500) break; // found a good page
+    // Click "Hipismo Nacional" link instead of navigating directly (evita Cloudflare)
+    console.log('[INH] Haciendo clic en Hipismo Nacional...');
+    const clicked = await page.evaluate(() => {
+      const links = document.querySelectorAll('a');
+      for (const link of links) {
+        if (link.textContent?.trim() === 'Hipismo Nacional') {
+          link.click();
+          return true;
         }
-      } catch (e) {
-        console.log('[INH]  -> error:', e.message.substring(0, 100));
       }
-    }
+      return false;
+    });
 
-    if (!racePageText) {
-      // fallback: dump current page
-      racePageText = await page.evaluate(() => document.body.innerText.substring(0, 5000));
-      racePageUrl = page.url();
+    if (!clicked) {
+      console.log('[INH] No se encontró link Hipismo Nacional, usando contenido actual');
+    } else {
+      await new Promise(r => setTimeout(r, 5000));
+      console.log('[INH] URL tras clic:', page.url());
+      pageText = await page.evaluate(() => document.body.innerText.substring(0, 8000));
+      console.log('[INH] Contenido tras clic:', pageText.replace(/\n+/g, ' | ').substring(0, 2000));
+      if (DEBUG) await page.screenshot({ path: 'inh-hipismo-nacional.png', fullPage: true });
     }
-
-    console.log('[INH] Usando URL:', racePageUrl);
 
     // ── Parse race data ──
 
-    // Try to extract structured data
+    const raceLines = pageText.split('\n').map(l => l.trim()).filter(Boolean);
+    console.log(`[INH] ${raceLines.length} líneas de texto`);
+
+    // Try to extract structured data from HTML tables/cards
     const extracted = await page.evaluate(() => {
-      const rows = Array.from(document.querySelectorAll('tr, [class*="row"], [class*="card"], [class*="item"], li'));
-      const items = [];
-      rows.forEach(row => {
-        const cells = row.querySelectorAll('td, th, [class*="cell"]');
-        if (cells.length >= 2) {
-          const data = Array.from(cells).map(c => c.textContent?.trim() || '');
-          items.push(data);
-        }
-      });
-      return items;
+      const tables = document.querySelectorAll('table');
+      if (tables.length > 0) {
+        return Array.from(tables).map((tbl, ti) => ({
+          table: ti,
+          rows: Array.from(tbl.querySelectorAll('tr')).map(tr =>
+            Array.from(tr.querySelectorAll('td, th')).map(c => c.textContent?.trim() || '')
+          )
+        }));
+      }
+      // Try cards
+      const cards = document.querySelectorAll('[class*="card"], [class*="Card"]');
+      if (cards.length > 0) {
+        return Array.from(cards).map(c => c.textContent?.trim().substring(0, 200));
+      }
+      return [];
     });
 
-    console.log(`[INH] Filas con datos: ${extracted.length}`);
+    console.log(`[INH] Tablas/cards encontradas: ${extracted.length}`);
 
-    // Build structured payload with whatever we found
-    const raceLines = racePageText.split('\n').map(l => l.trim()).filter(Boolean);
-
-    // Try to parse structured races from the text
-    const races = [];
+    // Parse races: group lines by track
     const program = [];
+    const races = [];
+    let currentTrack = '';
 
-    // Simple heuristic: look for lines containing "CARRERA", "RACE", track names
     raceLines.forEach((line, i) => {
       const upper = line.toUpperCase();
-      if (upper.includes('CARRERA') || upper.includes('CABALLO') || upper.includes('HIPICO')) {
+      if (upper.includes('RINCONADA') || upper.includes('VALENCIA') || upper.includes('SANTA RITA') || upper.includes('LA RINCONADA')) {
+        currentTrack = line;
+      } else if (upper.includes('CARRERA') && /\d+/.test(line)) {
         const num = line.match(/\d+/)?.[0];
-        if (num) program.push({ number: num, title: line });
+        program.push({ track: currentTrack, number: num, text: line.substring(0, 150) });
+      } else if (upper.includes('RESULTADO') || upper.includes('RESULTADOS') || upper.includes('LLEGADA')) {
+        const nextLines = raceLines.slice(i + 1, i + 20).filter(l => /\d+[-\s]/.test(l));
+        if (nextLines.length > 0) {
+          races.push({
+            track: currentTrack,
+            title: line,
+            horses: nextLines.slice(0, 15).map(l => {
+              const parts = l.split(/\s{2,}/);
+              return { text: l.substring(0, 100) };
+            })
+          });
+        }
       }
     });
 
     const payload = {
       program: program.length > 0 ? program : raceLines.filter(l => /\d/.test(l)).slice(0, 50).map(l => ({ text: l.substring(0, 200) })),
-      races: extracted.slice(0, 30).map(r => ({ cells: r })),
-      isRunning: true,
-      _debug: { url: racePageUrl, lines: raceLines.length, extractedLen: extracted.length }
+      races: races.length > 0 ? races : extracted,
+      isRunning: true
     };
 
     console.log(`[INH] Enviando: ${payload.program.length} programa, ${payload.races.length} carreras`);
