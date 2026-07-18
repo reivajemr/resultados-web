@@ -1,13 +1,14 @@
 import { install, detectBrowserPlatform } from '@puppeteer/browsers';
-import { fileURLToPath } from 'url';
-import { dirname, join } from 'path';
+import { join } from 'path';
 import { existsSync } from 'fs';
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const CACHE_DIR = process.env.PUPPETEER_CACHE_DIR || join(__dirname, '.puppeteer-cache');
 const BUILD_ID = '127.0.6533.88';
 const MAX_RETRIES = 3;
 const DOWNLOAD_TIMEOUT = 600000;
+
+function getCacheDir() {
+  return process.env.PUPPETEER_CACHE_DIR || join(process.cwd(), '.puppeteer-cache');
+}
 
 export async function ensureChrome() {
   const envPath = process.env.PUPPETEER_EXECUTABLE_PATH;
@@ -22,7 +23,8 @@ export async function ensureChrome() {
     return null;
   }
 
-  const chromeDir = join(CACHE_DIR, 'chrome', `${platform}-${BUILD_ID}`);
+  const cacheDir = getCacheDir();
+  const chromeDir = join(cacheDir, 'chrome', `${platform}-${BUILD_ID}`);
   const exeName = process.platform === 'win32' ? 'chrome.exe' : 'chrome';
   const executablePath = join(chromeDir, exeName);
 
@@ -37,7 +39,7 @@ export async function ensureChrome() {
     try {
       const result = await install({
         browser: 'chrome',
-        cacheDir: CACHE_DIR,
+        cacheDir,
         platform,
         buildId: BUILD_ID,
         timeout: DOWNLOAD_TIMEOUT
