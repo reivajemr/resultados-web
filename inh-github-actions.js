@@ -55,7 +55,7 @@ async function run() {
     console.log('[INH] Login OK:', isLoggedIn);
     if (!isLoggedIn) throw new Error('Login failed');
 
-    // ── 2. Navigate to Hipismo Nacional ──
+    // ── 2. Navigate ──
     console.log('[INH] Navigating to Hipismo Nacional...');
     const clicked = await page.evaluate(() => {
       for (const el of document.querySelectorAll('a, button')) {
@@ -67,12 +67,21 @@ async function run() {
       return false;
     });
     if (!clicked) throw new Error('No se encontró enlace');
-
     await new Promise(r => setTimeout(r, 10000));
+
     const isBlocked = await page.evaluate(() => document.body.innerText.toLowerCase().includes('security verification'));
     if (isBlocked) throw new Error('Cloudflare bloqueó');
 
-    // ── 3. Extract race numbers from tab buttons ──
+    // ── 3. Detect track ──
+    const track = await page.evaluate(() => {
+      const t = document.body.innerText;
+      if (t.includes('VALENCIA')) return 'Valencia';
+      if (t.includes('SANTA RITA')) return 'Santa Rita';
+      return 'La Rinconada';
+    });
+    console.log('[INH] Track:', track);
+
+    // ── 4. Extract race numbers ──
     const raceNumbers = await page.evaluate(() => {
       const nums = [];
       for (const btn of document.querySelectorAll('button')) {
@@ -83,18 +92,9 @@ async function run() {
     });
     console.log('[INH] Race tabs:', raceNumbers.join(', '));
 
-    // ── 4. Detect track ──
-    const track = await page.evaluate(() => {
-      const t = document.body.innerText;
-      if (t.includes('VALENCIA')) return 'Valencia';
-      if (t.includes('SANTA RITA')) return 'Santa Rita';
-      return 'La Rinconada';
-    });
-
     // ── 5. Extract horses for each race ──
     const races = [];
     for (const raceNum of raceNumbers) {
-      // Click the tab for this race
       await page.evaluate((num) => {
         for (const btn of document.querySelectorAll('button')) {
           if (btn.textContent?.trim() === `C${num}`) {
@@ -104,53 +104,135 @@ async function run() {
       }, raceNum);
       await new Promise(r => setTimeout(r, 1500));
 
-      // Extract horses from the now-visible tab
       const horses = await page.evaluate(() => {
         const result = [];
         for (const row of document.querySelectorAll('[class*="races-tab-grid"]')) {
-          const spans = row.querySelectorAll('span');
-          const firstSpan = spans[0]?.textContent?.trim() || '';
-          if (!/^\d+$/.test(firstSpan)) continue; // skip header row
+          // Collect all direct child elements (grid columns)
+          const children = Array.from(row.children);
+          const textValues = children.map(el => el.textContent?.trim() || '');
 
-          const nameEl = row.querySelector('div[class*="text-sm"]');
-          const detailEl = row.querySelector('span[class*="text-xs"]');
-          const dividendEl = row.querySelector('span[class*="text-yellow"]');
+          // First direct child that's a number -> horse number (skip header rows)
+          const numIdx = textValues.findIndex(t => /^\d+$/.test(t));
+          if (numIdx === -1) continue;
 
-          const horseName = nameEl?.textContent?.trim() || '';
-          const detail = detailEl?.textContent?.trim() || '';
-          const dividend = dividendEl?.textContent?.trim() || '';
+          const programNumber = textValues[numIdx];
 
-          const jockey = detail.match(/Jockey:\s*([^/]+)/)?.[1]?.trim() || '';
-          const trainer = detail.match(/Train:\s*([^)]+)/)?.[1]?.trim() || '';
-
-          // Weight is the 2nd-to-last visible span before hidden ones
-          let weight = '';
-          if (spans.length >= 4) {
-            weight = spans[Math.min(3, spans.length - 2)]?.textContent?.trim() || '';
+          // Find dividend: look for text-yellow in ANY descendant
+          let dividend = '';
+          for (const child of children) {
+            const yellow = child.querySelector('[class*="text-yellow"]');
+            if (yellow) { dividend = yellow.textContent?.trim() || ''; break; }
+            if (child.className?.includes('text-yellow')) {
+              dividend = child.textContent?.trim() || ''; break;
+            }
           }
 
-          result.push({
-            programNumber: firstSpan,
-            horseName,
-            dividend,
-            jockey,
-            trainer,
-            weight
-          });
+          // Find horse name + detail: look for a container div with text-sm inside
+          let horseName = '', jockey = '', trainer = '';
+          for (const child of children) {
+            const nameEl = child.querySelector('[class*="text-sm"]');
+            if (nameEl) {
+              horseName = nameEl.textContent?.trim() || '';
+              // Detail is a sibling of nameEl within the same parent
+              const parent = nameEl.parentElement;
+              if (parent) {
+                for (const sibling of parent.children) {
+                  if (sibling !== nameEl) {
+                    const txt = sibling.textContent?.trim() || '';
+                    if (txt.length > 2 && !/^\d+\.?\d*$/.test(txt)) {
+                      const jMatch = txt.match(/Jockey:\s*([^/]+)/i);
+                      if (jMatch) {
+                        jockey = jMatch[1]?.trim() || '';
+                        trainer = txt.match(/Train:\s*([^)]+)/i)?.[1]?.trim() || '';
+                      } else if (txt.includes('·')) {
+                        const parts = txt.split('·').map(s => s.trim());
+                        if (parts.length >= 2) {
+                          jockey = parts.slice(0, -1).join(' · ');
+                          trainer = parts[parts.length - 1];
+                        }
+                      } else {
+                        jockey = txt;
+                      }
+                      break;
+                    }
+                  }
+                }
+              }
+              break;
+            }
+            // Also check if the child itself has text-sm
+            if (child.className?.includes('text-sm')) {
+              horseName = child.textContent?.trim() || '';
+            }
+          }
+
+          // Weight: element with hidden class that's a direct grid child (not nested)
+          let weight = '';
+          for (const child of children) {
+            const cls = child.className || '';
+            if (cls.includes('hidden') && !child.textContent?.includes('Jockey') && !child.textContent?.includes('·')) {
+              const wt = child.textContent?.trim() || '';
+              if (/^[\d\.\-]+$/.test(wt) || wt === '-') {
+                weight = wt; break;
+              }
+            }
+          }
+
+          result.push({ programNumber, horseName, dividend, jockey, trainer, weight });
         }
         return result;
       });
 
-      races.push({ raceNumber: raceNum, horses, track });
-      console.log(`[INH] Race ${raceNum}: ${horses.length} horses`);
+      // ── 5b. Extract results for this race ──
+      const results = await page.evaluate(() => {
+        // Look for a results section near the race grid
+        // Usually has "Resultados C{N}" heading
+        const resultRows = [];
+        // Find all result rows (with positions like 1°, 2°, 3°, etc.)
+        const allDivs = document.querySelectorAll('div.grid');
+        for (const div of allDivs) {
+          const text = div.textContent || '';
+          if (/[1-5]°/.test(text) && (text.includes('Ganador') || text.includes('Place'))) {
+            const cells = div.querySelectorAll('span, div');
+            const texts = Array.from(cells).map(c => c.textContent?.trim() || '');
+            const posMatch = texts.find(t => /^(\d+)°$/.test(t));
+            const numMatch = texts.find(t => /^\d+$/.test(t));
+            const nameMatch = texts.find(t => t.length > 2 && !/^\d+°$/.test(t) && !/^\d+$/.test(t) && t !== 'Ganador' && t !== 'Place' && t !== '-' && !t.includes('Bs'));
+            const ganadorIdx = texts.findIndex(t => t === 'Ganador' || t === 'G');
+            const placeIdx = texts.findIndex(t => t === 'Place' || t === 'P');
+            const ganador = ganadorIdx >= 0 && ganadorIdx + 1 < texts.length ? texts[ganadorIdx + 1] : '';
+            const place = placeIdx >= 0 && placeIdx + 1 < texts.length ? texts[placeIdx + 1] : '';
+
+            if (posMatch && numMatch && nameMatch) {
+              resultRows.push({
+                position: parseInt(posMatch),
+                programNumber: numMatch,
+                horseName: nameMatch,
+                ganador,
+                place
+              });
+            }
+          }
+        }
+        return resultRows;
+      });
+
+      races.push({
+        raceNumber: raceNum,
+        horses,
+        track,
+        results: results.length > 0 ? results : undefined
+      });
+
+      console.log(`[INH] Race ${raceNum}: ${horses.length} horses, ${results.length} results`);
     }
 
-    // ── 6. Build & send payload ──
+    // ── 6. Build payload ──
     const program = races.map(r => ({
       raceNumber: r.raceNumber,
       track: r.track,
       raceTime: '',
-      statusText: 'Programada'
+      statusText: r.results?.length ? 'CERRADA' : 'ABIERTA'
     }));
 
     const payload = { program, races, isRunning: true };
