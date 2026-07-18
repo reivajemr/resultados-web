@@ -25,147 +25,130 @@ async function run() {
     await page.goto('https://apuestas.inh.gob.ve', { waitUntil: 'networkidle2', timeout: 60000 });
     console.log('[INH] Página cargada');
 
+    // Dismiss info modal that appears on every visit
+    await page.evaluate(() => {
+      for (const el of document.querySelectorAll('button, a, span, div')) {
+        const t = el.textContent?.trim().toUpperCase() || '';
+        if ((t.includes('CONFIRMAR') || t.includes('CONTINUAR') || t.includes('ENTENDIDO')) && el.offsetParent !== null) {
+          el.click();
+          return;
+        }
+      }
+    });
+    await new Promise(r => setTimeout(r, 1500));
+
     // Click "Ingresar" to open login modal
-    const modalOpened = await page.evaluate(() => {
-      const all = document.querySelectorAll('a, button, span, div');
-      for (const el of all) {
+    await page.evaluate(() => {
+      for (const el of document.querySelectorAll('a, button, span, div')) {
         if (el.textContent?.trim().toLowerCase() === 'ingresar' && el.offsetParent !== null) {
           el.click();
-          return true;
+          return;
         }
       }
-      return false;
     });
-    if (!modalOpened) throw new Error('No se encontró botón Ingresar');
     console.log('[INH] Click en Ingresar');
-
     await new Promise(r => setTimeout(r, 2000));
 
-    // Fill login form (modal) — fields: "Correo Electrónico" and "Contraseña"
-    const formFilled = await page.evaluate((user, pass) => {
-      // Find email field
+    if (DEBUG) await page.screenshot({ path: 'inh-login-modal.png', fullPage: true });
+
+    // Type email and password using Puppeteer's native keyboard events
+    // First find which input index is email vs password
+    const inputInfo = await page.evaluate(() => {
       const inputs = document.querySelectorAll('input');
-      let emailField = null;
-      let passField = null;
-      for (const inp of inputs) {
-        const type = inp.type || '';
-        const ph = (inp.placeholder || '').toLowerCase();
-        const name = (inp.name || '').toLowerCase();
-        const id = (inp.id || '').toLowerCase();
-        if (!emailField && (type === 'email' || type === 'text' || ph.includes('correo') || ph.includes('email') || ph.includes('usuario') || name.includes('email') || name.includes('user') || name.includes('login'))) {
-          emailField = inp;
-        }
-        if (!passField && type === 'password') {
-          passField = inp;
-        }
-      }
-      if (!emailField || !passField) return false;
+      return Array.from(inputs).map((inp, i) => ({
+        i,
+        type: inp.type,
+        placeholder: inp.placeholder,
+        name: inp.name,
+        id: inp.id,
+        className: inp.className?.substring(0, 40)
+      }));
+    });
+    console.log('[INH] Inputs:', JSON.stringify(inputInfo));
 
-      emailField.value = '';
-      emailField.value = user;
-      emailField.dispatchEvent(new Event('input', { bubbles: true }));
-      emailField.dispatchEvent(new Event('change', { bubbles: true }));
+    // Find the non-password input (email) and type into it
+    const emailIdx = inputInfo.findIndex(x => x.type === 'email' || (x.type === 'text' && !x.type.includes('hidden')));
+    if (emailIdx === -1) throw new Error('No se encontró campo email');
+    await page.click(`input:nth-of-type(${emailIdx + 1})`);
+    await new Promise(r => setTimeout(r, 200));
+    await page.type(`input:nth-of-type(${emailIdx + 1})`, INH_USER, { delay: 40 });
 
-      passField.value = '';
-      passField.value = pass;
-      passField.dispatchEvent(new Event('input', { bubbles: true }));
-      passField.dispatchEvent(new Event('change', { bubbles: true }));
+    const passIdx = inputInfo.findIndex(x => x.type === 'password');
+    if (passIdx === -1) throw new Error('No se encontró campo password');
+    await page.click(`input:nth-of-type(${passIdx + 1})`);
+    await new Promise(r => setTimeout(r, 200));
+    await page.type(`input:nth-of-type(${passIdx + 1})`, INH_PASS, { delay: 40 });
 
-      return true;
-    }, INH_USER, INH_PASS);
-
-    if (!formFilled) throw new Error('No se encontraron campos de email/contraseña');
-    console.log('[INH] Formulario llenado');
+    console.log('[INH] Formulario llenado con type()');
 
     await new Promise(r => setTimeout(r, 500));
 
-    // Click "Iniciar Sesión" button
-    const loginSubmitted = await page.evaluate(() => {
-      const all = document.querySelectorAll('button, input[type="submit"]');
-      for (const el of all) {
+    // Click "Iniciar Sesión"
+    await page.evaluate(() => {
+      for (const el of document.querySelectorAll('button')) {
         const t = el.textContent?.trim().toLowerCase() || '';
         if (t.includes('iniciar sesión') || t.includes('iniciar sesion') || t === 'iniciar') {
-          if (el.offsetParent !== null) { el.click(); return true; }
+          if (el.offsetParent !== null) { el.click(); return; }
         }
       }
-      // fallback: any submit button inside the modal
-      const modal = document.querySelector('[class*="modal"], [class*="Modal"], [role="dialog"], [class*="overlay"]');
-      if (modal) {
-        const btns = modal.querySelectorAll('button');
-        for (const b of btns) { if (b.offsetParent !== null) { b.click(); return true; } }
-      }
-      return false;
     });
-
-    if (!loginSubmitted) throw new Error('No se encontró botón Iniciar Sesión');
     console.log('[INH] Click en Iniciar Sesión');
 
-    // Wait for modal to close (login success)
+    // Wait for login to process
     await new Promise(r => setTimeout(r, 5000));
-
-    // Check if login succeeded: look for logged-in indicators
-    const isLoggedIn = await page.evaluate(() => {
-      const text = document.body.innerText;
-      // After login, "Ingresar" and "Registro" should be gone
-      return !text.includes('Ingresar') || text.includes('Cerrar Sesión') || text.includes('Mi Cuenta') || text.includes('Saldo');
-    });
-
-    console.log('[INH] ¿Login exitoso?', isLoggedIn);
-    console.log('[INH] URL:', page.url());
-    console.log('[INH] Title:', await page.title());
     if (DEBUG) await page.screenshot({ path: 'inh-after-login.png', fullPage: true });
 
-    // Dismiss any confirmation modal about payment info
-    const modalDismissed = await page.evaluate(() => {
-      const all = document.querySelectorAll('button, a, span, div');
-      // Try "TOCA AQUÍ PARA CONFIRMAR Y CONTINUAR"
-      for (const el of all) {
-        const t = el.textContent?.trim().toUpperCase() || '';
-        if (t.includes('CONFIRMAR') || t.includes('CONTINUAR') || t.includes('ENTENDIDO') || t === 'OK') {
-          if (el.offsetParent !== null) { el.click(); return true; }
+    // Check if login succeeded
+    const bodyText = await page.evaluate(() => document.body.innerText);
+    const isLoggedIn = !bodyText.includes('Ingresar') || bodyText.includes('Cerrar Sesión') || bodyText.includes('Mi Cuenta') || bodyText.includes('Saldo');
+    console.log('[INH] ¿Login exitoso?', isLoggedIn, '| URL:', page.url());
+    if (DEBUG) console.log('[INH] Text:', bodyText.substring(0, 1000).replace(/\n+/g, ' | '));
+
+    // Dismiss any remaining modals
+    let dismissed = true;
+    while (dismissed) {
+      dismissed = await page.evaluate(() => {
+        for (const el of document.querySelectorAll('button, a, span, div')) {
+          const t = el.textContent?.trim().toUpperCase() || '';
+          if ((t.includes('CONFIRMAR') || t.includes('CONTINUAR') || t.includes('ENTENDIDO') || t === 'OK' || t === 'CERRAR' || t === 'CLOSE') && el.offsetParent !== null) {
+            el.click();
+            return true;
+          }
         }
-      }
-      return false;
-    });
-    if (modalDismissed) {
-      console.log('[INH] Modal de confirmación cerrado');
-      await new Promise(r => setTimeout(r, 1500));
+        return false;
+      });
+      if (dismissed) await new Promise(r => setTimeout(r, 1000));
     }
+    console.log('[INH] Modales cerrados');
 
     await new Promise(r => setTimeout(r, 1000));
 
-    // Dump page content after login
+    // Dump page content
     let pageText = await page.evaluate(() => document.body.innerText.substring(0, 8000));
-    console.log('[INH] Contenido post-login:', pageText.replace(/\n+/g, ' | ').substring(0, 2000));
+    console.log('[INH] Contenido:', pageText.replace(/\n+/g, ' | ').substring(0, 2000));
 
-    // Click "Hipismo Nacional" link instead of navigating directly (evita Cloudflare)
-    console.log('[INH] Haciendo clic en Hipismo Nacional...');
-    const clicked = await page.evaluate(() => {
-      const links = document.querySelectorAll('a');
-      for (const link of links) {
-        if (link.textContent?.trim() === 'Hipismo Nacional') {
+    // Try clicking Hipismo Nacional link
+    console.log('[INH] Click en Hipismo Nacional...');
+    await page.evaluate(() => {
+      for (const link of document.querySelectorAll('a')) {
+        if (link.textContent?.trim() === 'Hipismo Nacional' && link.offsetParent !== null) {
           link.click();
-          return true;
+          return;
         }
       }
-      return false;
     });
+    await new Promise(r => setTimeout(r, 5000));
+    console.log('[INH] URL tras clic:', page.url());
 
-    if (!clicked) {
-      console.log('[INH] No se encontró link Hipismo Nacional, usando contenido actual');
+    const cfBlocked = await page.evaluate(() => document.body.innerText.includes('security verification'));
+    if (cfBlocked) {
+      console.log('[INH] Cloudflare bloqueó la navegación');
     } else {
-      await new Promise(r => setTimeout(r, 5000));
-      console.log('[INH] URL tras clic:', page.url());
-      // Check if Cloudflare blocked us
-      const cfBlocked = await page.evaluate(() => document.body.innerText.includes('security verification'));
-      if (cfBlocked) {
-        console.log('[INH] Cloudflare bloqueó la navegación');
-      } else {
-        pageText = await page.evaluate(() => document.body.innerText.substring(0, 8000));
-        console.log('[INH] Contenido tras clic:', pageText.replace(/\n+/g, ' | ').substring(0, 2000));
-      }
-      if (DEBUG) await page.screenshot({ path: 'inh-hipismo-nacional.png', fullPage: true });
+      pageText = await page.evaluate(() => document.body.innerText.substring(0, 8000));
+      console.log('[INH] Contenido tras clic:', pageText.replace(/\n+/g, ' | ').substring(0, 2000));
     }
+    if (DEBUG) await page.screenshot({ path: 'inh-hipismo-nacional.png', fullPage: true });
+    if (cfBlocked && DEBUG) await page.screenshot({ path: 'inh-cf-blocked.png', fullPage: true });
 
     // ── Parse race data ──
 
