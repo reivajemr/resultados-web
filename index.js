@@ -8,12 +8,8 @@ import AnimalitosScheduler from './scheduler.js';
 import * as dbModule from './db.js';
 import { ensureChrome } from './install-chrome.mjs';
 
-await ensureChrome();
-
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 process.env.PUPPETEER_CACHE_DIR = process.env.PUPPETEER_CACHE_DIR || '/tmp/.puppeteer-cache';
-
-const { INHScraper } = await import('./inh-scraper.js');
 
 const app = express();
 app.set('trust proxy', 1);
@@ -24,17 +20,6 @@ const HTTP_PASS = process.env.HTTP_PASS;
 const API_KEY = process.env.API_KEY;
 
 const db = process.env.DATABASE_URL ? dbModule : null;
-if (db) {
-  await db.initAllTables();
-  console.log('[DB] Persistencia activa');
-} else {
-  console.log('[DB] Sin DATABASE_URL — datos solo en memoria');
-}
-
-const inh = new INHScraper({
-  username: process.env.INH_USER,
-  password: process.env.INH_PASS
-});
 
 const animalitos = new AnimalitosScheduler({
   loteriaEmail: process.env.LOTERIA_EMAIL,
@@ -42,9 +27,11 @@ const animalitos = new AnimalitosScheduler({
   db
 });
 
+let inh = null;
 let inhPollInterval = null;
 let inhProgramCache = null;
 let inhLastProgramFetch = null;
+let inhReady = false;
 
 /* ───── INH Scheduler ───── */
 
@@ -153,21 +140,6 @@ async function runINHDay() {
   }
 }
 
-/* ───── Animalitos Scheduler ───── */
-
-await animalitos.start();
-console.log('[Animalitos] Scheduler iniciado');
-
-/* ───── Backfill días recientes ───── */
-
-animalitos.backfillRecentDays(2).catch(e =>
-  console.error('[Backfill] Error:', e.message)
-);
-
-/* ───── INH schedule ───── */
-
-scheduleINHDay();
-
 /* ───── Security middleware ───── */
 
 app.use(helmet());
@@ -205,7 +177,8 @@ app.use(requireAuth);
 /* ───── API Routes ───── */
 
 app.get('/api/inh', (req, res) => {
-  const data = inhProgramCache || inh.getCache();
+  if (!inh) return res.json({ timestamp: new Date().toISOString(), program: [], races: [], isRunning: false, lastPoll: null, status: 'initializing' });
+  const data = inhProgramCache || inh.getCache() || {};
   res.json({
     timestamp: new Date().toISOString(),
     program: Array.isArray(data?.program) ? data.program : [],
@@ -400,6 +373,36 @@ app.get('*', (req, res) => {
 
 app.listen(PORT, () => {
   console.log(`Servidor en http://localhost:${PORT}`);
+});
+
+/* ───── Background init ───── */
+
+(async () => {
+  if (db) {
+    await db.initAllTables();
+    console.log('[DB] Persistencia activa');
+  } else {
+    console.log('[DB] Sin DATABASE_URL — datos solo en memoria');
+  }
+
+  await animalitos.start();
+  console.log('[Animalitos] Scheduler iniciado');
+
+  animalitos.backfillRecentDays(2).catch(e =>
+    console.error('[Backfill] Error:', e.message)
+  );
+
+  await ensureChrome();
+
+  const { INHScraper } = await import('./inh-scraper.js');
+  inh = new INHScraper({
+    username: process.env.INH_USER,
+    password: process.env.INH_PASS
+  });
+  inhReady = true;
+  scheduleINHDay();
+})().catch(e => {
+  console.error('[Startup] Error:', e.message);
 });
 
 export default app;

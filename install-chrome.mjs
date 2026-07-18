@@ -30,7 +30,7 @@ export async function ensureChrome() {
 
   console.log('[Chrome] Descargando Chrome ' + BUILD_ID + '...');
   try {
-    const result = await install({ browser: 'chrome', cacheDir: CACHE_DIR, platform, buildId: BUILD_ID });
+    const result = await install({ browser: 'chrome', cacheDir: CACHE_DIR, platform, buildId: BUILD_ID, timeout: 180000 });
     process.env.PUPPETEER_EXECUTABLE_PATH = result.executablePath;
     console.log('[Chrome] Instalado en:', result.executablePath);
     return result.executablePath;
