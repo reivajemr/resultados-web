@@ -9,6 +9,7 @@ import AnimalitosScheduler from './scheduler.js';
 import * as dbModule from './db.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+process.env.PUPPETEER_CACHE_DIR = path.join(__dirname, '.puppeteer-cache');
 const app = express();
 app.set('trust proxy', 1);
 const PORT = process.env.PORT || 3000;
