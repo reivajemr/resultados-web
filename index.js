@@ -75,6 +75,9 @@ app.get('/api/inh', (req, res) => {
 });
 
 app.post('/api/inh/data', (req, res) => {
+  if (req.headers['x-api-key'] !== process.env.API_KEY) {
+    return res.status(401).json({ error: 'No autorizado' });
+  }
   const { program, races, isRunning } = req.body || {};
   inhData = {
     program: Array.isArray(program) ? program : inhData.program,
