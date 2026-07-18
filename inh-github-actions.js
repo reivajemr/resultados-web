@@ -200,15 +200,24 @@ async function extractRaces(page) {
       const container = grid?.closest('[class*="space-y"]') || grid?.parentElement || document.body;
       const containerText = container.textContent || '';
 
-      // 1. Status & time from the container (not full page)
+      // 1. Status & time: search FULL page for this race's results
       let statusText = 'ABIERTA';
       let raceTime = '';
-      const upper = containerText.toUpperCase();
-      if (upper.includes('CARRERA CERRADA')) statusText = 'CERRADA';
-      else if (upper.includes('CARRERA ABIERTA')) statusText = 'ABIERTA';
+      const bodyUpper = document.body.innerText.toUpperCase();
+      // If "Resultados C{N}" exists anywhere, race is closed
+      const resultHeader = new RegExp(`RESULTADOS\\s*C${num}[\\s\\S]{0,50}`, 'i');
+      if (resultHeader.test(document.body.innerText)) {
+        statusText = 'CERRADA';
+      } else if (bodyUpper.includes('CARRERA CERRADA')) {
+        statusText = 'CERRADA';
+      }
+      // Time from container
       const timeMatch = containerText.match(/Hora:\s*(\d{1,2}:\d{2}\s*[ap]\.?\s*m\.?)/i);
       if (timeMatch) raceTime = timeMatch[1].trim();
-      else { const t2 = containerText.match(/Hora:\s*([^\n]+)/i); if (t2) raceTime = t2[1].trim(); }
+      else if (bodyUpper.includes('HORA:')) {
+        const tm = document.body.innerText.match(/Hora:\s*(\d{1,2}:\d{2}\s*[ap]\.?\s*m\.?)/i);
+        if (tm) raceTime = tm[1].trim();
+      }
 
       // 2. Extract horses from the race grid
       const horses = [];
@@ -264,19 +273,19 @@ async function extractRaces(page) {
         horses.push({ programNumber, horseName, dividend, jockey, trainer, weight });
       }
 
-      // 3. Results + exotic dividends from the NEXT sibling section
+      // 3. Results + exotic dividends: search full page for this race's results
       const resultRows = [];
       const exoticDividends = {};
-      const nextSection = container.nextElementSibling;
-      if (nextSection) {
-        const nextText = nextSection.textContent || '';
-        // Look for position markers (1°, 2°, 3°...)
-        const lines = nextText.split('\n');
+      // Find the results section for this specific race
+      const resultSectionRegex = new RegExp(`Resultados\\s*C${num}([\\s\\S]{0,3000})(?:Resultados\\s*C\\d+|$)`, 'i');
+      const resultSectionMatch = resultSectionRegex.exec(document.body.innerText);
+      const resultsText = resultSectionMatch ? resultSectionMatch[1] : '';
+      if (resultsText) {
+        const lines = resultsText.split('\n');
         for (const line of lines) {
           const posMatch = line.match(/^\s*(\d+)°\s+/);
           if (posMatch) {
             const posNum = parseInt(posMatch[1]);
-            // Find horse number in the same line (the first standalone number after position)
             const numMatch = line.match(/°\s*(\d+)/);
             if (numMatch) {
               const parts = line.trim().split(/\s{2,}/).filter(Boolean);
