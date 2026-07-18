@@ -206,8 +206,9 @@ async function extractRaces(page) {
       const upper = containerText.toUpperCase();
       if (upper.includes('CARRERA CERRADA')) statusText = 'CERRADA';
       else if (upper.includes('CARRERA ABIERTA')) statusText = 'ABIERTA';
-      const timeMatch = containerText.match(/Hora:\s*([^\n]+)/i);
+      const timeMatch = containerText.match(/Hora:\s*(\d{1,2}:\d{2}\s*[ap]\.?\s*m\.?)/i);
       if (timeMatch) raceTime = timeMatch[1].trim();
+      else { const t2 = containerText.match(/Hora:\s*([^\n]+)/i); if (t2) raceTime = t2[1].trim(); }
 
       // 2. Extract horses from the race grid
       const horses = [];

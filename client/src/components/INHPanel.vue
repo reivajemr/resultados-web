@@ -1,138 +1,146 @@
 <template>
   <div class="inh-panel">
-    <div v-if="!tracks.length && !racesList.length" class="empty">
+    <div v-if="!hasData" class="empty">
       {{ data?.lastPoll ? 'No hay carreras hoy' : 'Consultando programación...' }}
     </div>
 
-    <div v-for="track in tracks" :key="track.name" class="track-section">
-      <h3 class="track-name">{{ track.name }}</h3>
-      <div class="race-list">
-        <div v-for="race in track.races" :key="race.raceNumber" class="race-card" :class="statusClass(race.statusText)">
-          <div class="race-header">
-            <span class="race-number">Carrera {{ race.raceNumber }}</span>
-            <span class="race-time">{{ race.raceTime || '—' }}</span>
-            <span class="race-status" :class="statusClass(race.statusText)">{{ statusLabel(race.statusText) }}</span>
+    <template v-if="hasData">
+      <div v-for="track in trackNames" :key="track" class="track-section">
+        <h3 class="track-name">{{ track }}</h3>
+
+        <!-- Resultados (carreras cerradas) -->
+        <div v-if="closedRaces[track]?.length" class="subsection">
+          <h4 class="subsection-title">Resultados</h4>
+          <div v-for="race in closedRaces[track]" :key="race.raceNumber" class="race-card closed">
+            <div class="race-header">
+              <span class="race-number">C{{ race.raceNumber }}</span>
+              <span class="race-time">{{ race.raceTime || '—' }}</span>
+              <span class="race-status closed">Cerrada</span>
+            </div>
+
+            <!-- Tabla de posiciones -->
+            <table class="result-table" v-if="race.horses?.some(h => h.position)">
+              <thead>
+                <tr><th>Pos</th><th>No</th><th>Ejemplar</th><th>Ganador</th><th>Place</th></tr>
+              </thead>
+              <tbody>
+                <tr v-for="h in sortedHorses(race)" :key="h.programNumber"
+                    :class="{ winner: h.position === 1, placed: h.position === 2 || h.position === 3 }">
+                  <td class="pos">{{ h.position }}°</td>
+                  <td class="num">{{ h.programNumber }}</td>
+                  <td class="name">{{ h.horseName }}</td>
+                  <td class="div">{{ h.ganadorDividend || '—' }}</td>
+                  <td class="div">{{ h.placeDividend || '—' }}</td>
+                </tr>
+              </tbody>
+            </table>
+
+            <!-- Dividendos exóticos -->
+            <div v-if="race.dividends && Object.keys(race.dividends).length" class="exotic-divs">
+              <span v-for="(val, key) in race.dividends" :key="key" class="exotic-item">
+                <span class="exo-label">{{ key }}</span>
+                <span class="exo-value">{{ val }}</span>
+              </span>
+            </div>
           </div>
+        </div>
 
-          <div v-if="getRaceDetails(race)" class="race-body">
-            <div v-if="getRaceDetails(race).horses?.length" class="horses">
-              <div v-for="h in getRaceDetails(race).horses" :key="h.programNumber" class="horse-row" :class="{ scratched: h.isScratched }">
-                <span class="horse-num">#{{ h.programNumber }}</span>
-                <span class="horse-name">{{ h.horseName }}</span>
-                <span v-if="h.position" class="horse-pos">{{ h.position }}°</span>
-                <span v-if="h.isScratched" class="horse-status-badge">RETIRADO</span>
-              </div>
+        <!-- Programa (carreras abiertas) -->
+        <div v-if="openRaces[track]?.length" class="subsection">
+          <h4 class="subsection-title">Programa</h4>
+          <div v-for="race in openRaces[track]" :key="race.raceNumber" class="race-card open">
+            <div class="race-header">
+              <span class="race-number">C{{ race.raceNumber }}</span>
+              <span class="race-time">{{ race.raceTime || '—' }}</span>
+              <span class="race-status open">Abierta</span>
             </div>
-
-            <div v-if="getRaceDetails(race).dividends && Object.keys(getRaceDetails(race).dividends).length" class="dividends">
-              <h4>Dividendos</h4>
-              <div v-for="(val, key) in getRaceDetails(race).dividends" :key="key" class="div-item">
-                <span class="div-label">{{ key }}</span>
-                <span class="div-value">{{ val }}</span>
-              </div>
-            </div>
+            <table class="horse-table">
+              <thead>
+                <tr><th>No</th><th>Div.</th><th>Ejemplar</th><th>Kg</th></tr>
+              </thead>
+              <tbody>
+                <tr v-for="h in race.horses" :key="h.programNumber">
+                  <td class="num">{{ h.programNumber }}</td>
+                  <td class="div">{{ h.dividend || '—' }}</td>
+                  <td class="name">{{ h.horseName }}</td>
+                  <td class="kg">{{ h.weight || '—' }}</td>
+                </tr>
+              </tbody>
+            </table>
           </div>
         </div>
       </div>
-    </div>
-
-    <div v-if="!tracks.length && racesList.length" class="race-list">
-      <div v-for="race in racesList" :key="race.raceNumber" class="race-card" :class="statusClass(race.statusText)">
-        <div class="race-header">
-          <span class="race-number">Carrera {{ race.raceNumber }}</span>
-          <span class="race-status" :class="statusClass(race.statusText)">{{ statusLabel(race.statusText) }}</span>
-        </div>
-        <div class="race-body">
-          <div v-if="race.horses?.length" class="horses">
-            <div v-for="h in race.horses" :key="h.programNumber" class="horse-row" :class="{ scratched: h.isScratched }">
-              <span class="horse-num">#{{ h.programNumber }}</span>
-              <span class="horse-name">{{ h.horseName }}</span>
-              <span v-if="h.position" class="horse-pos">{{ h.position }}°</span>
-              <span v-if="h.isScratched" class="horse-status-badge">RETIRADO</span>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
+    </template>
   </div>
 </template>
 
 <script setup>
 import { computed } from 'vue'
 
-const props = defineProps({
-  data: Object
+const props = defineProps({ data: Object })
+
+const hasData = computed(() => props.data?.races?.length)
+
+const trackNames = computed(() => {
+  if (!props.data?.races) return []
+  return [...new Set(props.data.races.map(r => r.track))]
 })
 
-const tracks = computed(() => {
-  if (!props.data?.program?.length) return []
-  const map = {}
-  for (const race of props.data.program) {
-    if (!map[race.track]) map[race.track] = []
-    map[race.track].push(race)
-  }
-  return Object.entries(map).map(([name, races]) => ({ name, races }))
-})
+function racesByStatus(track, isClosed) {
+  return (props.data?.races || []).filter(r =>
+    r.track === track && (isClosed ? r.statusText === 'CERRADA' : r.statusText !== 'CERRADA')
+  )
+}
 
-const racesList = computed(() => props.data?.races || [])
-
-const raceDetails = computed(() => {
+const closedRaces = computed(() => {
   const map = {}
-  if (props.data?.races) {
-    for (const r of props.data.races) {
-      const key = r.track ? `${r.track}-${r.raceNumber}` : `${r.raceNumber}`
-      map[key] = r
-    }
+  for (const t of trackNames.value) {
+    map[t] = racesByStatus(t, true)
   }
   return map
 })
 
-function getRaceDetails(race) {
-  const key = race.track ? `${race.track}-${race.raceNumber}` : `${race.raceNumber}`
-  return raceDetails.value?.[key] || raceDetails.value?.[race.raceNumber]
-}
+const openRaces = computed(() => {
+  const map = {}
+  for (const t of trackNames.value) {
+    map[t] = racesByStatus(t, false)
+  }
+  return map
+})
 
-function statusClass(s) {
-  if (!s) return 'status-pending'
-  if (s.includes('ABIERTA')) return 'status-open'
-  if (s.includes('CERRADA')) return 'status-closed'
-  return 'status-pending'
-}
-
-function statusLabel(s) {
-  if (!s) return 'Programada'
-  if (s.includes('ABIERTA')) return 'Abierta'
-  if (s.includes('CERRADA')) return 'Cerrada'
-  return s
+function sortedHorses(race) {
+  if (!race.horses) return []
+  return [...race.horses].filter(h => h.position).sort((a, b) => (a.position || 99) - (b.position || 99))
 }
 </script>
 
 <style scoped>
 .empty { color: #888; font-style: italic; padding: 12px 0; }
-.track-section { margin-bottom: 20px; }
-.track-name { font-size: 1rem; color: #1a1a2e; margin-bottom: 8px; padding-left: 4px; border-left: 3px solid #1a1a2e; padding-left: 10px; }
-.race-list { display: flex; flex-direction: column; gap: 10px; }
-.race-card { border: 1px solid #e0e0e0; border-radius: 8px; overflow: hidden; }
-.race-card.status-open { border-color: #4caf50; }
-.race-card.status-closed { border-color: #9e9e9e; opacity: 0.85; }
-.race-header { display: flex; align-items: center; gap: 12px; padding: 10px 12px; background: #fafafa; border-bottom: 1px solid #eee; }
-.race-number { font-weight: 600; font-size: 0.9rem; }
-.race-time { color: #666; font-size: 0.85rem; }
-.race-status { font-size: 0.75rem; padding: 2px 8px; border-radius: 10px; font-weight: 500; }
-.race-status.status-open { background: #e8f5e9; color: #2e7d32; }
-.race-status.status-closed { background: #eeeeee; color: #616161; }
-.race-status.status-pending { background: #fff3e0; color: #e65100; }
-.race-body { padding: 8px 12px; }
-.horses { display: flex; flex-direction: column; gap: 4px; }
-.horse-row { display: flex; align-items: center; gap: 8px; padding: 4px 0; font-size: 0.85rem; }
-.horse-row.scratched { opacity: 0.5; text-decoration: line-through; }
-.horse-num { font-weight: 600; min-width: 28px; color: #555; }
-.horse-name { flex: 1; }
-.horse-pos { background: #1a1a2e; color: #fff; padding: 1px 8px; border-radius: 10px; font-size: 0.75rem; font-weight: 600; }
-.horse-status-badge { background: #ef5350; color: #fff; padding: 1px 6px; border-radius: 4px; font-size: 0.7rem; font-weight: 600; }
-.dividends { margin-top: 8px; padding-top: 8px; border-top: 1px solid #eee; }
-.dividends h4 { font-size: 0.8rem; color: #666; margin-bottom: 4px; }
-.div-item { display: flex; justify-content: space-between; font-size: 0.8rem; padding: 2px 0; }
-.div-label { color: #555; }
-.div-value { font-weight: 600; color: #2e7d32; }
+.track-section { margin-bottom: 24px; }
+.track-name { font-size: 1.1rem; font-weight: 700; color: #1a1a2e; margin-bottom: 12px; border-left: 4px solid #1a1a2e; padding-left: 10px; }
+.subsection { margin-bottom: 16px; }
+.subsection-title { font-size: 0.85rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; color: #666; margin-bottom: 8px; }
+.race-card { border: 1px solid #e0e0e0; border-radius: 8px; margin-bottom: 10px; overflow: hidden; }
+.race-card.closed { border-color: #9e9e9e; }
+.race-card.open { border-color: #4caf50; }
+.race-header { display: flex; align-items: center; gap: 12px; padding: 8px 12px; background: #f5f5f5; font-size: 0.9rem; }
+.race-number { font-weight: 700; min-width: 30px; }
+.race-time { color: #666; font-size: 0.8rem; }
+.race-status { font-size: 0.7rem; padding: 2px 8px; border-radius: 10px; font-weight: 600; }
+.race-status.closed { background: #e0e0e0; color: #555; }
+.race-status.open { background: #e8f5e9; color: #2e7d32; }
+table { width: 100%; border-collapse: collapse; font-size: 0.8rem; }
+th { background: #fafafa; padding: 6px 8px; text-align: left; font-weight: 600; color: #555; border-bottom: 1px solid #e0e0e0; }
+td { padding: 5px 8px; border-bottom: 1px solid #f0f0f0; }
+tr.winner { background: #fff8e1; font-weight: 600; }
+tr.placed { background: #f5f5f5; }
+.pos { font-weight: 700; color: #1a1a2e; width: 30px; }
+.num { font-weight: 600; width: 28px; color: #333; }
+.name { flex: 1; }
+.div { font-family: monospace; text-align: right; color: #2e7d32; font-weight: 600; }
+.kg { text-align: center; color: #666; }
+.exotic-divs { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px 12px; background: #fafafa; border-top: 1px solid #e0e0e0; }
+.exotic-item { background: #fff; border: 1px solid #e8e8e8; border-radius: 4px; padding: 3px 8px; font-size: 0.75rem; display: flex; gap: 6px; }
+.exo-label { color: #666; }
+.exo-value { font-weight: 700; color: #2e7d32; font-family: monospace; }
 </style>
