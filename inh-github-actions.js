@@ -1,13 +1,15 @@
 import puppeteer from 'puppeteer';
 import axios from 'axios';
 
-// GitHub inyecta secrets como variables de entorno directamente
 const RENDER_URL = process.env.RENDER_URL || 'https://resultados-web.onrender.com';
 const API_KEY = process.env.RENDER_API_KEY;
 const INH_USER = process.env.INH_USER;
 const INH_PASS = process.env.INH_PASS;
+const DEBUG = process.env.DEBUG_INH === '1';
 
 async function run() {
+  if (!INH_USER || !INH_PASS) throw new Error('Faltan INH_USER o INH_PASS en secrets');
+
   const browser = await puppeteer.launch({
     headless: true,
     args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-gpu', '--single-process', '--no-zygote']
@@ -20,93 +22,155 @@ async function run() {
 
     await page.goto('https://apuestas.inh.gob.ve', { waitUntil: 'networkidle2', timeout: 60000 });
 
-    try {
-      await page.waitForSelector('button:has-text("Iniciar Sesión")', { timeout: 10000 });
-      await page.click('button:has-text("Iniciar Sesión")');
-    } catch {
-      try {
-        await page.waitForSelector('button:has-text("Ingresar")', { timeout: 5000 });
-        await page.click('button:has-text("Ingresar")');
-      } catch {
-        throw new Error('No se encontró botón de inicio de sesión');
+    // Debug: dump page text
+    const bodyText = await page.evaluate(() => document.body.innerText.substring(0, 2000));
+    console.log('[Debug] Page text:', bodyText.replace(/\n+/g, ' | '));
+    if (DEBUG) await page.screenshot({ path: 'inh-page.png', fullPage: true });
+
+    // Try many possible login button selectors
+    const loginClicked = await page.evaluate(() => {
+      const selectors = [
+        'a[href*="login"]', 'a[href*="ingresar"]', 'a[href*="iniciar"]',
+        'button:has-text("Iniciar")', 'button:has-text("Ingresar")',
+        'button:has-text("Entrar")', 'button:has-text("Acceder")',
+        '[class*="login"]', '[class*="ingresar"]',
+        'a:has-text("Iniciar")', 'a:has-text("Ingresar")', 'a:has-text("Entrar")',
+        '[onclick*="login"]', '[onclick*="ingresar"]',
+        'header a[href*="sesion"]',
+        'a[href*="sesion"]', 'button[href*="sesion"]',
+      ];
+      for (const sel of selectors) {
+        const el = document.querySelector(sel);
+        if (el) {
+          console.log('[Debug] Clicking:', sel, '| text:', el.textContent?.trim().substring(0, 50));
+          el.click();
+          return true;
+        }
       }
+      // Try any button/link containing common keywords
+      const all = document.querySelectorAll('button, a, [role="button"]');
+      for (const el of all) {
+        const t = el.textContent?.toLowerCase().trim() || '';
+        if (t.includes('iniciar') || t.includes('ingresar') || t.includes('entrar') || t.includes('acceder') || t.includes('sesión') || t.includes('sesion')) {
+          console.log('[Debug] Clicking by text:', el.textContent?.trim().substring(0, 50));
+          el.click();
+          return true;
+        }
+      }
+      return false;
+    });
+
+    if (!loginClicked) {
+      const html = await page.evaluate(() => document.body.innerHTML.substring(0, 3000));
+      console.log('[Debug] HTML snippet:', html);
+      throw new Error('No se encontró botón de inicio de sesión');
     }
 
-    if (!INH_USER || !INH_PASS) throw new Error('Faltan INH_USER o INH_PASS en secrets');
-    await page.waitForSelector('input[name="username"]', { timeout: 10000 });
-    await page.type('input[name="username"]', INH_USER);
-    await page.type('input[name="password"]', INH_PASS);
-    await page.click('button[type="submit"]');
-    await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 30000 });
+    // Wait for login form
+    await page.waitForSelector('form, input[name="username"], input[type="email"], input[id*="user"], input[id*="email"], input[placeholder*="usuario"], input[placeholder*="email"]', { timeout: 15000 });
 
+    // Wait a moment for any animations
+    await new Promise(r => setTimeout(r, 1000));
+
+    // Fill login form - try multiple possible field names
+    await page.evaluate((user, pass) => {
+      const fields = ['username', 'user', 'email', 'login', 'usuario', 'correo'];
+      const passFields = ['password', 'pass', 'clave', 'contrasena', 'contraseña'];
+      let userField = null;
+      for (const name of fields) {
+        const el = document.querySelector(`input[name="${name}"], input[id*="${name}"], input[placeholder*="${name}"]`);
+        if (el) { userField = el; break; }
+      }
+      if (!userField) {
+        // Try any visible text input before password field
+        const inputs = document.querySelectorAll('input:not([type="hidden"])');
+        for (const inp of inputs) {
+          if (inp.type === 'text' || inp.type === 'email') { userField = inp; break; }
+        }
+      }
+      if (userField) {
+        userField.focus();
+        userField.value = '';
+        userField.value = user;
+        userField.dispatchEvent(new Event('input', { bubbles: true }));
+        userField.dispatchEvent(new Event('change', { bubbles: true }));
+      }
+
+      let passField = null;
+      for (const name of passFields) {
+        const el = document.querySelector(`input[name="${name}"], input[id*="${name}"], input[placeholder*="${name}"]`);
+        if (el) { passField = el; break; }
+      }
+      if (!passField) passField = document.querySelector('input[type="password"]');
+      if (passField) {
+        passField.focus();
+        passField.value = '';
+        passField.value = pass;
+        passField.dispatchEvent(new Event('input', { bubbles: true }));
+        passField.dispatchEvent(new Event('change', { bubbles: true }));
+      }
+    }, INH_USER, INH_PASS);
+
+    if (DEBUG) await page.screenshot({ path: 'inh-login-filled.png', fullPage: true });
+
+    // Click submit button
+    const submitted = await page.evaluate(() => {
+      const submitBtns = document.querySelectorAll('button[type="submit"], input[type="submit"], button:has-text("Ingresar"), button:has-text("Entrar"), button:has-text("Acceder"), button:has-text("Iniciar")');
+      for (const btn of submitBtns) {
+        if (btn.offsetParent !== null) { btn.click(); return true; }
+      }
+      // Try any visible submit-like button within the form
+      const form = document.querySelector('form');
+      if (form) {
+        const btns = form.querySelectorAll('button');
+        for (const btn of btns) { if (btn.offsetParent !== null) { btn.click(); return true; } }
+      }
+      return false;
+    });
+
+    if (!submitted) throw new Error('No se encontró botón de envío del formulario');
+
+    await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 30000 }).catch(() => {});
+    await new Promise(r => setTimeout(r, 2000));
+
+    if (DEBUG) await page.screenshot({ path: 'inh-after-login.png', fullPage: true });
+    console.log('[INH] Login exitoso, URL:', page.url());
+
+    // Navigate to races page
     await page.goto('https://apuestas.inh.gob.ve/apuestas/nacional', { waitUntil: 'networkidle2', timeout: 30000 });
 
+    await new Promise(r => setTimeout(r, 2000));
+    if (DEBUG) await page.screenshot({ path: 'inh-races.png', fullPage: true });
+
+    // Extract race data using generic selectors
     const program = await page.evaluate(() => {
-      const tracks = document.querySelectorAll('[class*="track-card"], [class*="TrackCard"]');
+      const items = document.querySelectorAll('[class*="carrera"], [class*="race"], [class*="Carrera"], [class*="Race"], tr, [class*="card"]');
       const data = [];
-      tracks.forEach(track => {
-        const trackName = track.querySelector('[class*="track-name"], [class*="trackName"]')?.textContent?.trim();
-        const races = track.querySelectorAll('[class*="race-card"], [class*="RaceCard"]');
-        races.forEach(race => {
-          const raceNumber = race.querySelector('[class*="race-number"], [class*="raceNumber"]')?.textContent?.trim();
-          const raceTime = race.querySelector('[class*="race-time"], [class*="raceTime"]')?.textContent?.trim();
-          const statusEl = race.querySelector('[class*="status"]');
-          const statusText = statusEl?.textContent?.trim() || '';
-          const statusId = statusText.includes('ABIERTA') ? '1' : statusText.includes('CERRADA') ? '7' : '0';
-          if (raceNumber) {
-            data.push({ track: trackName || 'Desconocido', raceNumber, raceTime, statusId, statusText });
-          }
-        });
+      items.forEach(item => {
+        const text = item.textContent?.trim() || '';
+        if (!text) return;
+        const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+        if (lines.length < 2) return;
+        const raceNumber = lines[0].match(/\d+/)?.[0];
+        if (!raceNumber) return;
+        data.push({ html: text.substring(0, 200) });
       });
       return data;
     });
 
-    const races = await page.evaluate(() => {
-      const raceCards = document.querySelectorAll('[class*="race-card"], [class*="RaceCard"]');
-      const results = [];
-      raceCards.forEach(race => {
-        const raceNumber = race.querySelector('[class*="race-number"], [class*="raceNumber"]')?.textContent?.trim();
-        if (!raceNumber) return;
-        const statusEl = race.querySelector('[class*="status"]');
-        const statusText = statusEl?.textContent?.trim() || '';
-        const isClosed = statusText.includes('CERRADA');
-        const isOpen = statusText.includes('ABIERTA');
-        const horses = [];
-        const rows = race.querySelectorAll('table tbody tr, [class*="horse-row"]');
-        rows.forEach(row => {
-          const programNumber = row.querySelector('td:first-child, [class*="number"]')?.textContent?.trim();
-          const horseName = row.querySelector('[class*="horse-name"], [class*="horseName"]')?.textContent?.trim();
-          const position = row.querySelector('[class*="position"]')?.textContent?.trim();
-          if (programNumber) {
-            horses.push({
-              programNumber,
-              horseName: horseName || '',
-              position: position || null,
-              isScratched: row.querySelector('[class*="status"]')?.textContent?.toLowerCase().includes('retirado') || false,
-              status: ''
-            });
-          }
-        });
-        const dividends = {};
-        race.querySelectorAll('[class*="dividend"]').forEach(item => {
-          const label = item.querySelector('[class*="label"]')?.textContent?.trim();
-          const value = item.querySelector('[class*="value"]')?.textContent?.trim();
-          if (label && value) dividends[label] = value;
-        });
-        const exotics = {};
-        race.querySelectorAll('[class*="exotic"]').forEach(item => {
-          const name = item.querySelector('[class*="exotic-name"]')?.textContent?.trim();
-          const combo = item.querySelector('[class*="exotic-combo"]')?.textContent?.trim();
-          const payout = item.querySelector('[class*="exotic-payout"]')?.textContent?.trim();
-          if (name) exotics[name] = { combo: combo || null, payout: payout || null };
-        });
-        results.push({ raceNumber, isOpen, isClosed, statusText, horses, dividends, exotics });
-      });
-      return results;
-    });
+    console.log(`[INH] Items encontrados: ${program.length}`);
 
-    const payload = { program, races, isRunning: true };
-    console.log(`[INH] ${program.length} carreras, ${races.length} con datos`);
+    // Simple approach: send all visible text
+    const pageText = await page.evaluate(() => document.body.innerText);
+    const raceLines = pageText.split('\n').map(l => l.trim()).filter(Boolean);
+
+    const payload = {
+      program: raceLines.filter(l => /\d/.test(l)).map(l => ({ text: l })),
+      races: [],
+      isRunning: true
+    };
+
+    console.log(`[INH] ${payload.program.length} líneas extraídas`);
 
     if (!API_KEY) throw new Error('Falta RENDER_API_KEY en secrets');
     if (!RENDER_URL) throw new Error('Falta RENDER_URL en variables');
