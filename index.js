@@ -61,15 +61,19 @@ function scheduleINHDay() {
   const targetHour = 9;
   const targetMin = 0;
 
-  const firstRun = new Date(now);
-  firstRun.setHours(targetHour, targetMin, 0, 0);
+  const todayRun = new Date(now);
+  todayRun.setHours(targetHour, targetMin, 0, 0);
 
-  if (now > firstRun) {
-    firstRun.setDate(firstRun.getDate() + 1);
+  if (now > todayRun) {
+    runINHDay().catch(e => console.error('[INH] Error en jornada:', e.message));
   }
 
-  const delay = firstRun.getTime() - now.getTime();
-  console.log(`[INH] Próxima programación: ${firstRun.toLocaleString()}`);
+  const tomorrow = new Date(now);
+  tomorrow.setHours(targetHour, targetMin, 0, 0);
+  tomorrow.setDate(tomorrow.getDate() + 1);
+
+  const delay = tomorrow.getTime() - now.getTime();
+  console.log(`[INH] Próxima programación: ${tomorrow.toLocaleString()}`);
 
   setTimeout(async () => {
     await runINHDay();
