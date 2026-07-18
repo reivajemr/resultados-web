@@ -6,7 +6,7 @@
   "scripts": {
     "start": "node index.js",
     "build": "cd client && npm install && npm run build && cd .. && npm install",
-    "postinstall": "node -e \"import('puppeteer/internal/node/install.js').then(m => m.downloadBrowser()).then(() => console.log('Chrome descargado')).catch(e => {console.error('Error descargando Chrome:', e.message); process.exit(1)})\"",
+    "postinstall": "node install-chrome.mjs",
     "dev": "node index.js"
   },
   "dependencies": {
