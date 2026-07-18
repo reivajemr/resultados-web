@@ -193,9 +193,25 @@ async function extractRaces(page) {
     }, raceNum);
     await new Promise(r => setTimeout(r, 1200));
 
-    // Extract horses
-    const horses = await page.evaluate(() => {
-      const result = [];
+    // Extract ALL data for this race (horses, status, time, results, dividends)
+    const raceData = await page.evaluate((num) => {
+      const text = document.body.innerText;
+
+      // Status: look for "CARRERA CERRADA" or "CARRERA ABIERTA"
+      let statusText = 'ABIERTA';
+      let raceTime = '';
+      const statusEl = document.querySelector('[class*="bg-destructive"], [class*="bg-green"]');
+      if (statusEl) {
+        const st = statusEl.textContent?.toUpperCase() || '';
+        if (st.includes('CERRADA')) statusText = 'CERRADA';
+        else if (st.includes('ABIERTA')) statusText = 'ABIERTA';
+        // Extract time from the same container
+        const timeSpan = statusEl.querySelector('span:last-child, [class*="ml-2"]');
+        if (timeSpan) raceTime = timeSpan.textContent?.replace('Hora:', '').trim() || '';
+      }
+
+      // Extract horses from the race grid
+      const horses = [];
       for (const row of document.querySelectorAll('[class*="races-tab-grid"]')) {
         const children = Array.from(row.children);
         const textValues = children.map(el => el.textContent?.trim() || '');
@@ -204,17 +220,13 @@ async function extractRaces(page) {
 
         const programNumber = textValues[numIdx];
 
-        // Dividend: element with text-yellow class
         let dividend = '';
         for (const child of children) {
           const yellow = child.querySelector('[class*="text-yellow"]');
           if (yellow) { dividend = yellow.textContent?.trim() || ''; break; }
-          if (child.className?.includes('text-yellow')) {
-            dividend = child.textContent?.trim() || ''; break;
-          }
+          if (child.className?.includes('text-yellow')) { dividend = child.textContent?.trim() || ''; break; }
         }
 
-        // Horse name + jockey/trainer
         let horseName = '', jockey = '', trainer = '';
         for (const child of children) {
           const nameEl = child.querySelector('[class*="text-sm"]');
@@ -232,13 +244,9 @@ async function extractRaces(page) {
                       trainer = txt.match(/Train:\s*([^)]+)/i)?.[1]?.trim() || '';
                     } else if (txt.includes('·')) {
                       const parts = txt.split('·').map(s => s.trim());
-                      if (parts.length >= 2) {
-                        jockey = parts.slice(0, -1).join(' · ');
-                        trainer = parts[parts.length - 1];
-                      }
-                    } else {
-                      jockey = txt;
-                    }
+                      jockey = parts.slice(0, -1).join(' · ');
+                      trainer = parts[parts.length - 1];
+                    } else { jockey = txt; }
                     break;
                   }
                 }
@@ -246,31 +254,98 @@ async function extractRaces(page) {
             }
             break;
           }
-          if (child.className?.includes('text-sm')) {
-            horseName = child.textContent?.trim() || '';
-          }
+          if (child.className?.includes('text-sm')) { horseName = child.textContent?.trim() || ''; }
         }
 
-        // Weight: hidden grid child
         let weight = '';
         for (const child of children) {
           const cls = child.className || '';
           if (cls.includes('hidden') && !child.textContent?.includes('Jockey') && !child.textContent?.includes('·')) {
             const wt = child.textContent?.trim() || '';
-            if (/^[\d\.\-]+$/.test(wt) || wt === '-') {
-              weight = wt; break;
-            }
+            if (/^[\d\.\-]+$/.test(wt) || wt === '-') { weight = wt; break; }
           }
         }
 
-        result.push({ programNumber, horseName, dividend, jockey, trainer, weight });
+        horses.push({ programNumber, horseName, dividend, jockey, trainer, weight });
       }
-      return result;
-    });
 
-    races.push({ raceNumber: raceNum, horses, track, dividends: {} });
-    if (raceNum % 5 === 0 || raceNum === raceNumbers[raceNumbers.length - 1]) {
-      console.log(`[INH]   ${track} C${raceNum}: ${horses.length} horses`);
+      // Extract results (positions + payouts) for closed races
+      const resultRows = [];
+      const exoticDividends = {};
+
+      // Find result sections: look for grids with position markers (1°, 2°, 3°)
+      const resultContainers = document.querySelectorAll('[class*="border-border"][class*="rounded-lg"]');
+      for (const container of resultContainers) {
+        const header = container.querySelector('[class*="bg-muted/40"]');
+        if (!header) continue;
+        const headerText = header.textContent?.trim().toUpperCase() || '';
+
+        if (headerText === 'POS' || headerText.includes('GANADOR') || headerText.includes('PLACE')) {
+          // This is a results table header - process the rows after it
+          let currentEl = container.firstElementChild;
+          while (currentEl) {
+            // Each result row after the header
+            if (currentEl !== header) {
+              const posSpan = currentEl.querySelector('[class*="rounded-full"]');
+              const numSpan = currentEl.querySelector('[class*="tabular-nums"]:not([class*="text-yellow"])');
+              const nameSpan = currentEl.querySelector('[class*="text-sm"][class*="font-medium"]');
+              const divSpans = currentEl.querySelectorAll('[class*="text-green-400"]');
+
+              if (posSpan && numSpan) {
+                const posText = posSpan.textContent?.trim() || '';
+                const posMatch = posText.match(/^(\d+)/);
+                resultRows.push({
+                  position: posMatch ? parseInt(posMatch[1]) : 0,
+                  programNumber: numSpan.textContent?.trim() || '',
+                  horseName: nameSpan?.textContent?.trim() || '',
+                  ganador: divSpans[0]?.textContent?.trim() || '',
+                  place: divSpans[1]?.textContent?.trim() || ''
+                });
+              }
+            }
+            currentEl = currentEl.nextElementSibling;
+          }
+        } else if (headerText.includes('JUGADAS') || headerText.includes('EXÓTICAS') || headerText.includes('EXOTICAS')) {
+          // Exotic plays
+          let currentEl = container.firstElementChild;
+          while (currentEl) {
+            if (currentEl !== header) {
+              const label = currentEl.querySelector('span:first-child, div:first-child');
+              const value = currentEl.querySelector('[class*="text-green"]');
+              if (label && value) {
+                const key = label.textContent?.trim() || '';
+                const val = value.textContent?.trim() || '';
+                if (key && val) exoticDividends[key] = val;
+              }
+            }
+            currentEl = currentEl.nextElementSibling;
+          }
+        }
+      }
+
+      // Apply positions to horses
+      for (const result of resultRows) {
+        const horse = horses.find(h => h.programNumber === result.programNumber);
+        if (horse) {
+          horse.position = result.position;
+          horse.ganadorDividend = result.ganador || undefined;
+          horse.placeDividend = result.place || undefined;
+        }
+      }
+
+      return { horses, statusText, raceTime, exoticDividends };
+    }, raceNum);
+
+    races.push({
+      raceNumber: raceNum,
+      horses: raceData.horses,
+      track,
+      statusText: raceData.statusText,
+      raceTime: raceData.raceTime,
+      dividends: raceData.exoticDividends || {}
+    });
+    if (raceNum % 3 === 0 || raceNum === raceNumbers[raceNumbers.length - 1]) {
+      console.log(`[INH]   ${track} C${raceNum}: ${raceData.horses.length} horses, ${raceData.statusText}${raceData.raceTime ? ' ' + raceData.raceTime : ''}${Object.keys(raceData.exoticDividends).length ? ', exóticas:' + Object.keys(raceData.exoticDividends).join(',') : ''}`);
     }
   }
 
@@ -321,8 +396,8 @@ async function run() {
     const program = allRaces.map(r => ({
       raceNumber: r.raceNumber,
       track: r.track,
-      raceTime: '',
-      statusText: 'ABIERTA'
+      raceTime: r.raceTime || '',
+      statusText: r.statusText || 'ABIERTA'
     }));
 
     const payload = { program, races: allRaces, isRunning: true };
