@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "start": "node index.js",
-    "build": "cd client && npm install && npm run build",
+    "build": "cd client && npm install && npm run build && cd .. && npm install",
     "dev": "node index.js"
   },
   "dependencies": {
@@ -20,8 +20,5 @@
   },
   "engines": {
     "node": ">=18.0.0"
-  },
-  "puppeteer": {
-    "executablePath": "/usr/bin/chromium-browser"
   }
 }
