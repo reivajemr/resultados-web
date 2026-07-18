@@ -20,164 +20,170 @@ async function run() {
     await page.setViewport({ width: 1280, height: 800 });
     await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/127.0.0.0 Safari/537.36');
 
+    // ── Login ──
+
     await page.goto('https://apuestas.inh.gob.ve', { waitUntil: 'networkidle2', timeout: 60000 });
+    console.log('[INH] Página cargada');
 
-    // Debug: dump page text
-    const bodyText = await page.evaluate(() => document.body.innerText.substring(0, 2000));
-    console.log('[Debug] Page text:', bodyText.replace(/\n+/g, ' | '));
-    if (DEBUG) await page.screenshot({ path: 'inh-page.png', fullPage: true });
-
-    // Find login button - try XPath first, then CSS
     const loginClicked = await page.evaluate(() => {
-      // Try XPath-like text search
-      const allBtns = document.querySelectorAll('button, a, [role="button"], span, div');
-      for (const el of allBtns) {
+      const all = document.querySelectorAll('button, a, [role="button"], span, div');
+      for (const el of all) {
         const t = el.textContent?.trim().toLowerCase() || '';
-        if (t === 'ingresar' || t === 'iniciar sesión' || t === 'iniciar sesion' || t.startsWith('ingresar') || t.startsWith('iniciar')) {
-          if (el.offsetParent !== null) {
-            console.log('[Debug] Clicking by text:', el.textContent?.trim().substring(0, 50));
-            el.click();
-            return true;
-          }
+        if (t === 'ingresar' || t === 'iniciar sesión' || t === 'iniciar sesion') {
+          if (el.offsetParent !== null) { el.click(); return true; }
         }
       }
-      // Try href-based
-      const byHref = document.querySelectorAll('a[href*="login"], a[href*="ingresar"], a[href*="iniciar"], a[href*="sesion"]');
-      for (const el of byHref) {
-        if (el.offsetParent !== null) { el.click(); return true; }
-      }
-      // Try class-based
-      const byClass = document.querySelectorAll('[class*="login"], [class*="ingresar"], [class*="sesion"]');
-      for (const el of byClass) {
-        if (el.offsetParent !== null) { el.click(); return true; }
-      }
+      const byAttr = document.querySelectorAll('a[href*="login"], a[href*="ingresar"], a[href*="iniciar"], a[href*="sesion"]');
+      for (const el of byAttr) { if (el.offsetParent !== null) { el.click(); return true; } }
       return false;
     });
+    if (!loginClicked) throw new Error('No se encontró botón de inicio de sesión');
 
-    if (!loginClicked) {
-      const html = await page.evaluate(() => document.body.innerHTML.substring(0, 3000));
-      console.log('[Debug] HTML snippet:', html);
-      throw new Error('No se encontró botón de inicio de sesión');
-    }
+    await page.waitForSelector('input, form', { timeout: 15000 }).catch(() => {});
+    await new Promise(r => setTimeout(r, 1500));
 
-    // Wait for login form
-    await page.waitForSelector('form, input, button[type="submit"]', { timeout: 15000 }).catch(() => {
-      // if no form found, continue anyway
-    });
-
-    // Wait a moment for any animations
-    await new Promise(r => setTimeout(r, 1000));
-
-    // Fill login form - try multiple possible field names
     await page.evaluate((user, pass) => {
-      const fields = ['username', 'user', 'email', 'login', 'usuario', 'correo'];
-      const passFields = ['password', 'pass', 'clave', 'contrasena', 'contraseña'];
-      let userField = null;
-      for (const name of fields) {
-        const el = document.querySelector(`input[name="${name}"], input[id*="${name}"], input[placeholder*="${name}"]`);
-        if (el) { userField = el; break; }
-      }
-      if (!userField) {
-        // Try any visible text input before password field
+      let uf = document.querySelector('input[name="username"], input[name="user"], input[name="email"], input[type="email"], input[placeholder*="usuario"]');
+      if (!uf) {
         const inputs = document.querySelectorAll('input:not([type="hidden"])');
         for (const inp of inputs) {
-          if (inp.type === 'text' || inp.type === 'email') { userField = inp; break; }
+          if (inp.type === 'text' || inp.type === 'email') { uf = inp; break; }
         }
       }
-      if (userField) {
-        userField.focus();
-        userField.value = '';
-        userField.value = user;
-        userField.dispatchEvent(new Event('input', { bubbles: true }));
-        userField.dispatchEvent(new Event('change', { bubbles: true }));
-      }
+      if (uf) { uf.value = user; uf.dispatchEvent(new Event('input', { bubbles: true })); }
 
-      let passField = null;
-      for (const name of passFields) {
-        const el = document.querySelector(`input[name="${name}"], input[id*="${name}"], input[placeholder*="${name}"]`);
-        if (el) { passField = el; break; }
+      let pf = document.querySelector('input[type="password"]');
+      if (!pf) {
+        for (const name of ['password', 'pass', 'clave', 'contrasena', 'contraseña']) {
+          pf = document.querySelector(`input[name="${name}"], input[id*="${name}"]`);
+          if (pf) break;
+        }
       }
-      if (!passField) passField = document.querySelector('input[type="password"]');
-      if (passField) {
-        passField.focus();
-        passField.value = '';
-        passField.value = pass;
-        passField.dispatchEvent(new Event('input', { bubbles: true }));
-        passField.dispatchEvent(new Event('change', { bubbles: true }));
-      }
+      if (pf) { pf.value = pass; pf.dispatchEvent(new Event('input', { bubbles: true })); }
     }, INH_USER, INH_PASS);
 
-    if (DEBUG) await page.screenshot({ path: 'inh-login-filled.png', fullPage: true });
+    await new Promise(r => setTimeout(r, 500));
 
-    // Click submit button
     const submitted = await page.evaluate(() => {
-      const submitTypes = document.querySelectorAll('button[type="submit"], input[type="submit"]');
-      for (const btn of submitTypes) {
-        if (btn.offsetParent !== null) { btn.click(); return true; }
-      }
-      // Try buttons containing login text
-      const allBtns = document.querySelectorAll('button');
-      for (const btn of allBtns) {
-        const t = btn.textContent?.trim().toLowerCase() || '';
-        if (t.includes('ingresar') || t.includes('entrar') || t.includes('acceder') || t.includes('iniciar')) {
-          if (btn.offsetParent !== null) { btn.click(); return true; }
+      const btns = document.querySelectorAll('button[type="submit"], input[type="submit"]');
+      for (const b of btns) { if (b.offsetParent !== null) { b.click(); return true; } }
+      const all = document.querySelectorAll('button');
+      for (const b of all) {
+        const t = b.textContent?.trim().toLowerCase() || '';
+        if (t.includes('ingresar') || t.includes('entrar') || t.includes('iniciar')) {
+          if (b.offsetParent !== null) { b.click(); return true; }
         }
-      }
-      // Try any visible button within the form
-      const form = document.querySelector('form');
-      if (form) {
-        const btns = form.querySelectorAll('button');
-        for (const btn of btns) { if (btn.offsetParent !== null) { btn.click(); return true; } }
       }
       return false;
     });
-
-    if (!submitted) throw new Error('No se encontró botón de envío del formulario');
+    if (!submitted) throw new Error('No se encontró botón de submit');
 
     await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 30000 }).catch(() => {});
-    await new Promise(r => setTimeout(r, 2000));
+    await new Promise(r => setTimeout(r, 3000));
 
+    console.log('[INH] Post-login URL:', page.url());
+    console.log('[INH] Post-login title:', await page.title());
     if (DEBUG) await page.screenshot({ path: 'inh-after-login.png', fullPage: true });
-    console.log('[INH] Login exitoso, URL:', page.url());
 
-    // Navigate to races page
-    await page.goto('https://apuestas.inh.gob.ve/apuestas/nacional', { waitUntil: 'networkidle2', timeout: 30000 });
+    // ── Explore navigation ──
 
-    await new Promise(r => setTimeout(r, 2000));
-    if (DEBUG) await page.screenshot({ path: 'inh-races.png', fullPage: true });
+    // Print all links on the page
+    const links = await page.evaluate(() => {
+      return Array.from(document.querySelectorAll('a')).map(a => ({ href: a.href, text: a.textContent?.trim().substring(0, 60) }));
+    });
+    console.log('[INH] Links disponibles:', JSON.stringify(links.slice(0, 30)));
 
-    // Extract race data using generic selectors
-    const program = await page.evaluate(() => {
-      const items = document.querySelectorAll('[class*="carrera"], [class*="race"], [class*="Carrera"], [class*="Race"], tr, [class*="card"]');
-      const data = [];
-      items.forEach(item => {
-        const text = item.textContent?.trim() || '';
-        if (!text) return;
-        const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
-        if (lines.length < 2) return;
-        const raceNumber = lines[0].match(/\d+/)?.[0];
-        if (!raceNumber) return;
-        data.push({ html: text.substring(0, 200) });
+    // Print menus
+    const menuText = await page.evaluate(() => {
+      const nav = document.querySelector('nav, header, [class*="menu"], [class*="navbar"], [class*="header"]');
+      return nav ? nav.innerText.substring(0, 1000) : 'no nav found';
+    });
+    console.log('[INH] Menú:', menuText.substring(0, 500));
+
+    // ── Navigate to hipismo nacional page ──
+    // Try common race page URLs
+    const urlsToTry = [
+      'https://apuestas.inh.gob.ve/hipismo/nacional',
+      'https://apuestas.inh.gob.ve/apuestas/nacional',
+      'https://apuestas.inh.gob.ve/hipismo',
+      'https://apuestas.inh.gob.ve/hipismo/valencia',
+      'https://apuestas.inh.gob.ve/hipismo/rinconada',
+      'https://apuestas.inh.gob.ve/hipismo/5y6',
+    ];
+
+    let racePageText = '';
+    let racePageUrl = '';
+    for (const url of urlsToTry) {
+      console.log('[INH] Probando:', url);
+      try {
+        await page.goto(url, { waitUntil: 'networkidle2', timeout: 20000 });
+        await new Promise(r => setTimeout(r, 2000));
+        const textLen = (await page.evaluate(() => document.body.innerText.length)) || 0;
+        console.log('[INH]  -> longitud texto:', textLen);
+        if (textLen > 200) {
+          racePageText = await page.evaluate(() => document.body.innerText.substring(0, 5000));
+          racePageUrl = page.url();
+          console.log('[INH] Contenido:', racePageText.replace(/\n+/g, ' | ').substring(0, 1000));
+          if (DEBUG) await page.screenshot({ path: 'inh-' + url.replace(/[^a-z]/g, '') + '.png', fullPage: true });
+          if (textLen > 500) break; // found a good page
+        }
+      } catch (e) {
+        console.log('[INH]  -> error:', e.message.substring(0, 100));
+      }
+    }
+
+    if (!racePageText) {
+      // fallback: dump current page
+      racePageText = await page.evaluate(() => document.body.innerText.substring(0, 5000));
+      racePageUrl = page.url();
+    }
+
+    console.log('[INH] Usando URL:', racePageUrl);
+
+    // ── Parse race data ──
+
+    // Try to extract structured data
+    const extracted = await page.evaluate(() => {
+      const rows = Array.from(document.querySelectorAll('tr, [class*="row"], [class*="card"], [class*="item"], li'));
+      const items = [];
+      rows.forEach(row => {
+        const cells = row.querySelectorAll('td, th, [class*="cell"]');
+        if (cells.length >= 2) {
+          const data = Array.from(cells).map(c => c.textContent?.trim() || '');
+          items.push(data);
+        }
       });
-      return data;
+      return items;
     });
 
-    console.log(`[INH] Items encontrados: ${program.length}`);
+    console.log(`[INH] Filas con datos: ${extracted.length}`);
 
-    // Simple approach: send all visible text
-    const pageText = await page.evaluate(() => document.body.innerText);
-    const raceLines = pageText.split('\n').map(l => l.trim()).filter(Boolean);
+    // Build structured payload with whatever we found
+    const raceLines = racePageText.split('\n').map(l => l.trim()).filter(Boolean);
+
+    // Try to parse structured races from the text
+    const races = [];
+    const program = [];
+
+    // Simple heuristic: look for lines containing "CARRERA", "RACE", track names
+    raceLines.forEach((line, i) => {
+      const upper = line.toUpperCase();
+      if (upper.includes('CARRERA') || upper.includes('CABALLO') || upper.includes('HIPICO')) {
+        const num = line.match(/\d+/)?.[0];
+        if (num) program.push({ number: num, title: line });
+      }
+    });
 
     const payload = {
-      program: raceLines.filter(l => /\d/.test(l)).map(l => ({ text: l })),
-      races: [],
-      isRunning: true
+      program: program.length > 0 ? program : raceLines.filter(l => /\d/.test(l)).slice(0, 50).map(l => ({ text: l.substring(0, 200) })),
+      races: extracted.slice(0, 30).map(r => ({ cells: r })),
+      isRunning: true,
+      _debug: { url: racePageUrl, lines: raceLines.length, extractedLen: extracted.length }
     };
 
-    console.log(`[INH] ${payload.program.length} líneas extraídas`);
+    console.log(`[INH] Enviando: ${payload.program.length} programa, ${payload.races.length} carreras`);
 
     if (!API_KEY) throw new Error('Falta RENDER_API_KEY en secrets');
-    if (!RENDER_URL) throw new Error('Falta RENDER_URL en variables');
     await axios.post(`${RENDER_URL}/api/inh/data`, payload, {
       headers: { 'Content-Type': 'application/json', 'x-api-key': API_KEY }
     });
