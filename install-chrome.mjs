@@ -1,13 +1,14 @@
 import { install, detectBrowserPlatform } from '@puppeteer/browsers';
-import { join } from 'path';
+import { resolve, join } from 'path';
 import { existsSync } from 'fs';
 
 const BUILD_ID = '127.0.6533.88';
-const MAX_RETRIES = 3;
+const MAX_RETRIES = 5;
 const DOWNLOAD_TIMEOUT = 600000;
 
 function getCacheDir() {
-  return process.env.PUPPETEER_CACHE_DIR || join(process.cwd(), '.puppeteer-cache');
+  if (process.env.PUPPETEER_CACHE_DIR) return resolve(process.env.PUPPETEER_CACHE_DIR);
+  return resolve(join(process.cwd(), '.puppeteer-cache'));
 }
 
 export async function ensureChrome() {
@@ -24,6 +25,7 @@ export async function ensureChrome() {
   }
 
   const cacheDir = getCacheDir();
+  console.log('[Chrome] Cache dir:', cacheDir);
   const chromeDir = join(cacheDir, 'chrome', `${platform}-${BUILD_ID}`);
   const exeName = process.platform === 'win32' ? 'chrome.exe' : 'chrome';
   const executablePath = join(chromeDir, exeName);
@@ -50,7 +52,7 @@ export async function ensureChrome() {
     } catch (e) {
       console.warn(`[Chrome] Error (intento ${attempt}): ${e.message}`);
       if (attempt < MAX_RETRIES) {
-        const wait = attempt * 10000;
+        const wait = Math.min(attempt * 10000, 30000);
         console.log(`[Chrome] Reintentando en ${wait / 1000}s...`);
         await new Promise(r => setTimeout(r, wait));
       }
