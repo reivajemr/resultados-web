@@ -23,6 +23,6 @@
     "node": ">=18.0.0"
   },
   "puppeteer": {
-    "cacheDirectory": ".puppeteer-cache"
+    "cacheDirectory": "/opt/render/project/src/.puppeteer-cache"
   }
 }
