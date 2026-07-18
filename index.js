@@ -6,9 +6,12 @@ import rateLimit from 'express-rate-limit';
 import helmet from 'helmet';
 import AnimalitosScheduler from './scheduler.js';
 import * as dbModule from './db.js';
+import { ensureChrome } from './install-chrome.mjs';
+
+await ensureChrome();
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-process.env.PUPPETEER_CACHE_DIR = path.join(__dirname, '.puppeteer-cache');
+process.env.PUPPETEER_CACHE_DIR = process.env.PUPPETEER_CACHE_DIR || '/tmp/.puppeteer-cache';
 
 const { INHScraper } = await import('./inh-scraper.js');
 

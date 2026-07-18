@@ -2,29 +2,40 @@ import { install, detectBrowserPlatform } from '@puppeteer/browsers';
 import { join } from 'path';
 import { existsSync } from 'fs';
 
-const cacheDir = '/opt/render/project/src/.puppeteer-cache';
-const platform = detectBrowserPlatform();
-const buildId = '127.0.6533.88';
+const CACHE_DIR = '/tmp/.puppeteer-cache';
+const BUILD_ID = '127.0.6533.88';
 
-if (!platform) {
-  process.stderr.write('No se pudo detectar plataforma\n');
-  process.exit(1);
-}
+export async function ensureChrome() {
+  const envPath = process.env.PUPPETEER_EXECUTABLE_PATH;
+  if (envPath && existsSync(envPath)) {
+    console.log('[Chrome] Usando PUPPETEER_EXECUTABLE_PATH:', envPath);
+    return envPath;
+  }
 
-const chromeDir = join(cacheDir, 'chrome', `${platform}-${buildId}`);
-if (existsSync(chromeDir)) {
-  process.stdout.write('Chrome ya existe, saltando descarga\n');
-  process.exit(0);
-}
+  const platform = detectBrowserPlatform();
+  if (!platform) {
+    console.warn('[Chrome] No se pudo detectar plataforma');
+    return null;
+  }
 
-process.stdout.write('Descargando Chrome ' + buildId + '...\n');
-try {
-  await Promise.race([
-    install({ browser: 'chrome', cacheDir, platform, buildId }),
-    new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout (180s)')), 180000))
-  ]);
-  process.stdout.write('Chrome instalado correctamente\n');
-} catch (e) {
-  process.stderr.write('ERROR: ' + e.message + '\n');
-  process.exit(1);
+  const chromeDir = join(CACHE_DIR, 'chrome', `${platform}-${BUILD_ID}`);
+  const exeName = process.platform === 'win32' ? 'chrome.exe' : 'chrome';
+  const executablePath = join(chromeDir, exeName);
+
+  if (existsSync(executablePath)) {
+    console.log('[Chrome] Usando caché:', executablePath);
+    process.env.PUPPETEER_EXECUTABLE_PATH = executablePath;
+    return executablePath;
+  }
+
+  console.log('[Chrome] Descargando Chrome ' + BUILD_ID + '...');
+  try {
+    const result = await install({ browser: 'chrome', cacheDir: CACHE_DIR, platform, buildId: BUILD_ID });
+    process.env.PUPPETEER_EXECUTABLE_PATH = result.executablePath;
+    console.log('[Chrome] Instalado en:', result.executablePath);
+    return result.executablePath;
+  } catch (e) {
+    console.warn('[Chrome] Error descargando Chrome:', e.message);
+    return null;
+  }
 }

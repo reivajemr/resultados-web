@@ -6,7 +6,6 @@
   "scripts": {
     "start": "node index.js",
     "build": "cd client && npm install && npm run build && cd .. && npm install",
-    "postinstall": "node install-chrome.mjs",
     "dev": "node index.js"
   },
   "dependencies": {
@@ -17,12 +16,10 @@
     "express-rate-limit": "^8.5.2",
     "helmet": "^8.2.0",
     "pg": "^8.22.0",
-    "puppeteer": "^22.0.0"
+    "@puppeteer/browsers": "^2.0.0",
+    "puppeteer-core": "^22.0.0"
   },
   "engines": {
     "node": ">=18.0.0"
-  },
-  "puppeteer": {
-    "cacheDirectory": "/opt/render/project/src/.puppeteer-cache"
   }
 }
