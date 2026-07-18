@@ -1,8 +1,11 @@
 import puppeteer from 'puppeteer';
 import axios from 'axios';
 
+// GitHub inyecta secrets como variables de entorno directamente
 const RENDER_URL = process.env.RENDER_URL || 'https://resultados-web.onrender.com';
 const API_KEY = process.env.RENDER_API_KEY;
+const INH_USER = process.env.INH_USER;
+const INH_PASS = process.env.INH_PASS;
 
 async function run() {
   const browser = await puppeteer.launch({
@@ -29,9 +32,10 @@ async function run() {
       }
     }
 
+    if (!INH_USER || !INH_PASS) throw new Error('Faltan INH_USER o INH_PASS en secrets');
     await page.waitForSelector('input[name="username"]', { timeout: 10000 });
-    await page.type('input[name="username"]', process.env.INH_USER);
-    await page.type('input[name="password"]', process.env.INH_PASS);
+    await page.type('input[name="username"]', INH_USER);
+    await page.type('input[name="password"]', INH_PASS);
     await page.click('button[type="submit"]');
     await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 30000 });
 
@@ -104,6 +108,8 @@ async function run() {
     const payload = { program, races, isRunning: true };
     console.log(`[INH] ${program.length} carreras, ${races.length} con datos`);
 
+    if (!API_KEY) throw new Error('Falta RENDER_API_KEY en secrets');
+    if (!RENDER_URL) throw new Error('Falta RENDER_URL en variables');
     await axios.post(`${RENDER_URL}/api/inh/data`, payload, {
       headers: { 'Content-Type': 'application/json', 'x-api-key': API_KEY }
     });
