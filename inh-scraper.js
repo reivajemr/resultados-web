@@ -18,13 +18,18 @@ export class INHScraper {
   async start() {
     if (this.cache.isRunning) return;
 
-    this.browser = await puppeteer.launch({
+    const launchOpts = {
       headless: true,
       args: [
         '--no-sandbox', '--disable-setuid-sandbox',
         '--disable-gpu', '--single-process', '--no-zygote'
       ]
-    });
+    };
+
+    const envPath = process.env.PUPPETEER_EXECUTABLE_PATH;
+    if (envPath) launchOpts.executablePath = envPath;
+
+    this.browser = await puppeteer.launch(launchOpts);
 
     this.page = await this.browser.newPage();
     await this.page.setViewport({ width: 1280, height: 800 });
