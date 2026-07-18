@@ -1,6 +1,6 @@
 import { install, detectBrowserPlatform } from '@puppeteer/browsers';
 import { resolve, join } from 'path';
-import { existsSync } from 'fs';
+import { existsSync, rmSync } from 'fs';
 
 const BUILD_ID = '127.0.6533.88';
 const MAX_RETRIES = 5;
@@ -34,6 +34,11 @@ export async function ensureChrome() {
     console.log('[Chrome] Usando caché:', executablePath);
     process.env.PUPPETEER_EXECUTABLE_PATH = executablePath;
     return executablePath;
+  }
+
+  if (existsSync(chromeDir)) {
+    console.log('[Chrome] Caché corrupto, limpiando...');
+    rmSync(chromeDir, { recursive: true, force: true });
   }
 
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
