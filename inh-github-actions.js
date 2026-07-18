@@ -56,56 +56,108 @@ async function navigateToRaces(page) {
 }
 
 async function switchTrack(page, trackName) {
-  // Click the hipódromo select trigger
-  const clicked = await page.evaluate((name) => {
-    const triggers = document.querySelectorAll('[data-slot="select-trigger"], button[role="combobox"]');
-    for (const btn of triggers) {
-      if (btn.textContent?.trim().toLowerCase() === name.toLowerCase()) return false; // already on this track
-      if (btn.textContent?.trim().toLowerCase().includes('hipódromo') || btn.getAttribute('aria-controls')) {
-        btn.click(); return true;
-      }
-    }
-    return false;
-  }, trackName);
+  // Check current track name from the trigger button
+  const currentTrack = await page.evaluate(() => {
+    const trigger = document.querySelector('[data-slot="select-value"]');
+    return trigger?.textContent?.trim() || '';
+  });
+  console.log(`[INH] Current track: "${currentTrack}" -> target: "${trackName}"`);
+  if (currentTrack.toLowerCase() === trackName.toLowerCase()) return true;
+
+  // Click the select trigger to open dropdown
+  const clicked = await page.evaluate(() => {
+    const trigger = document.querySelector('[data-slot="select-trigger"], button[role="combobox"]');
+    if (!trigger) return false;
+    trigger.click();
+    return true;
+  });
 
   if (!clicked) {
-    if (trackName === 'La Rinconada') return false; // already on LR
-    console.log(`[INH] Could not find track selector for ${trackName}`);
-    return false;
+    console.log('[INH] Could not find track selector trigger');
+    // Fallback: try navigating directly
+    await page.goto('https://apuestas.inh.gob.ve/apuestas/nacional?hipodromo=' + encodeURIComponent(trackName), { waitUntil: 'domcontentloaded' });
+    await new Promise(r => setTimeout(r, 5000));
+    return true;
   }
 
-  await new Promise(r => setTimeout(r, 1500));
+  // Wait for dropdown portal to render
+  await new Promise(r => setTimeout(r, 2500));
 
-  // Find and click the option in the dropdown portal
+  // Find and click the option - Radix UI renders in a portal
   const selected = await page.evaluate((name) => {
-    // Options are in a portal, might be in a different part of the DOM
-    const options = document.querySelectorAll('[role="option"], [data-slot="select-item"]');
-    for (const opt of options) {
+    // Strategy 1: role="option" elements anywhere in the DOM
+    let opts = document.querySelectorAll('[role="option"]');
+    for (const opt of opts) {
       if (opt.textContent?.trim().toLowerCase() === name.toLowerCase()) {
         opt.click(); return true;
       }
     }
-    // Try finding in scroll containers or portal roots
-    const allElements = document.querySelectorAll('body > *:last-child, body > *:nth-last-child(2)');
-    for (const container of allElements) {
-      const items = container.querySelectorAll('[role="option"], [data-slot="select-item"], [class*="select-item"]');
-      for (const item of items) {
-        if (item.textContent?.trim().toLowerCase() === name.toLowerCase()) {
-          item.click(); return true;
+
+    // Strategy 2: data-slot="select-item"
+    opts = document.querySelectorAll('[data-slot="select-item"]');
+    for (const opt of opts) {
+      if (opt.textContent?.trim().toLowerCase() === name.toLowerCase()) {
+        opt.click(); return true;
+      }
+    }
+
+    // Strategy 3: search all top-level body children for the portal
+    const bodyChildren = document.body.children;
+    for (let i = bodyChildren.length - 1; i >= 0; i--) {
+      const el = bodyChildren[i];
+      if (el.tagName === 'DIV' && el.querySelector) {
+        const items = el.querySelectorAll('[role="option"], [data-slot="select-item"], [class*="select-item"]');
+        for (const item of items) {
+          if (item.textContent?.trim().toLowerCase() === name.toLowerCase()) {
+            item.click(); return true;
+          }
         }
       }
     }
+
+    // Strategy 4: search all fixed/absolute positioned divs at the end
+    const allDivs = document.querySelectorAll('div[style*="fixed"], div[style*="absolute"], div[style*="z-index"], div[role="listbox"]');
+    for (const div of allDivs) {
+      if (div.textContent?.trim().toLowerCase().includes(name.toLowerCase())) {
+        const item = div.querySelector('[role="option"], [data-slot="select-item"]');
+        if (item) { item.click(); return true; }
+        // If the div itself is the option
+        if (div.getAttribute('role') === 'option' || div.getAttribute('data-slot') === 'select-item') {
+          div.click(); return true;
+        }
+      }
+    }
+
     return false;
   }, trackName);
 
   if (!selected) {
-    console.log(`[INH] Could not find option ${trackName} in dropdown`);
-    return false;
+    console.log(`[INH] Could not find "${trackName}" option in dropdown, trying click by coordinates...`);
+    // Try clicking the trigger again with a different approach
+    await page.evaluate((name) => {
+      // Try dispatching a custom change event
+      const trigger = document.querySelector('[data-slot="select-trigger"], button[role="combobox"]');
+      if (trigger) {
+        // Try clicking all items that contain the track name
+        document.querySelectorAll('div, span, button').forEach(el => {
+          if (el.textContent?.trim().toLowerCase() === name.toLowerCase() && el.offsetParent !== null) {
+            el.click();
+          }
+        });
+      }
+    }, trackName);
+    await new Promise(r => setTimeout(r, 3000));
   }
 
   // Wait for page to load new track data
   await new Promise(r => setTimeout(r, 5000));
-  return true;
+
+  const verifyTrack = await page.evaluate(() => {
+    const trigger = document.querySelector('[data-slot="select-value"]');
+    return trigger?.textContent?.trim() || '';
+  });
+  console.log(`[INH] After switch, track is: "${verifyTrack}"`);
+  return verifyTrack.toLowerCase() === trackName.toLowerCase();
 }
 
 async function extractRaces(page) {
