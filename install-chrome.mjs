@@ -4,6 +4,8 @@ import { existsSync } from 'fs';
 
 const CACHE_DIR = '/tmp/.puppeteer-cache';
 const BUILD_ID = '127.0.6533.88';
+const MAX_RETRIES = 3;
+const DOWNLOAD_TIMEOUT = 600000;
 
 export async function ensureChrome() {
   const envPath = process.env.PUPPETEER_EXECUTABLE_PATH;
@@ -28,14 +30,29 @@ export async function ensureChrome() {
     return executablePath;
   }
 
-  console.log('[Chrome] Descargando Chrome ' + BUILD_ID + '...');
-  try {
-    const result = await install({ browser: 'chrome', cacheDir: CACHE_DIR, platform, buildId: BUILD_ID, timeout: 180000 });
-    process.env.PUPPETEER_EXECUTABLE_PATH = result.executablePath;
-    console.log('[Chrome] Instalado en:', result.executablePath);
-    return result.executablePath;
-  } catch (e) {
-    console.warn('[Chrome] Error descargando Chrome:', e.message);
-    return null;
+  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    console.log(`[Chrome] Descargando Chrome ${BUILD_ID} (intento ${attempt}/${MAX_RETRIES})...`);
+    try {
+      const result = await install({
+        browser: 'chrome',
+        cacheDir: CACHE_DIR,
+        platform,
+        buildId: BUILD_ID,
+        timeout: DOWNLOAD_TIMEOUT
+      });
+      process.env.PUPPETEER_EXECUTABLE_PATH = result.executablePath;
+      console.log('[Chrome] Instalado en:', result.executablePath);
+      return result.executablePath;
+    } catch (e) {
+      console.warn(`[Chrome] Error (intento ${attempt}): ${e.message}`);
+      if (attempt < MAX_RETRIES) {
+        const wait = attempt * 10000;
+        console.log(`[Chrome] Reintentando en ${wait / 1000}s...`);
+        await new Promise(r => setTimeout(r, wait));
+      }
+    }
   }
+
+  console.warn('[Chrome] No se pudo descargar después de', MAX_RETRIES, 'intentos');
+  return null;
 }
