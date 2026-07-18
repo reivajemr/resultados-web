@@ -1,7 +1,7 @@
 <template>
   <div class="inh-panel">
     <div v-if="!tracks.length && !racesList.length" class="empty">
-      Sin programación disponible. El scraper consulta a las 9:00 AM.
+      {{ data?.lastPoll ? 'No hay carreras hoy' : 'Consultando programación...' }}
     </div>
 
     <div v-for="track in tracks" :key="track.name" class="track-section">
