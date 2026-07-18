@@ -27,35 +27,29 @@ async function run() {
     console.log('[Debug] Page text:', bodyText.replace(/\n+/g, ' | '));
     if (DEBUG) await page.screenshot({ path: 'inh-page.png', fullPage: true });
 
-    // Try many possible login button selectors
+    // Find login button - try XPath first, then CSS
     const loginClicked = await page.evaluate(() => {
-      const selectors = [
-        'a[href*="login"]', 'a[href*="ingresar"]', 'a[href*="iniciar"]',
-        'button:has-text("Iniciar")', 'button:has-text("Ingresar")',
-        'button:has-text("Entrar")', 'button:has-text("Acceder")',
-        '[class*="login"]', '[class*="ingresar"]',
-        'a:has-text("Iniciar")', 'a:has-text("Ingresar")', 'a:has-text("Entrar")',
-        '[onclick*="login"]', '[onclick*="ingresar"]',
-        'header a[href*="sesion"]',
-        'a[href*="sesion"]', 'button[href*="sesion"]',
-      ];
-      for (const sel of selectors) {
-        const el = document.querySelector(sel);
-        if (el) {
-          console.log('[Debug] Clicking:', sel, '| text:', el.textContent?.trim().substring(0, 50));
-          el.click();
-          return true;
+      // Try XPath-like text search
+      const allBtns = document.querySelectorAll('button, a, [role="button"], span, div');
+      for (const el of allBtns) {
+        const t = el.textContent?.trim().toLowerCase() || '';
+        if (t === 'ingresar' || t === 'iniciar sesión' || t === 'iniciar sesion' || t.startsWith('ingresar') || t.startsWith('iniciar')) {
+          if (el.offsetParent !== null) {
+            console.log('[Debug] Clicking by text:', el.textContent?.trim().substring(0, 50));
+            el.click();
+            return true;
+          }
         }
       }
-      // Try any button/link containing common keywords
-      const all = document.querySelectorAll('button, a, [role="button"]');
-      for (const el of all) {
-        const t = el.textContent?.toLowerCase().trim() || '';
-        if (t.includes('iniciar') || t.includes('ingresar') || t.includes('entrar') || t.includes('acceder') || t.includes('sesión') || t.includes('sesion')) {
-          console.log('[Debug] Clicking by text:', el.textContent?.trim().substring(0, 50));
-          el.click();
-          return true;
-        }
+      // Try href-based
+      const byHref = document.querySelectorAll('a[href*="login"], a[href*="ingresar"], a[href*="iniciar"], a[href*="sesion"]');
+      for (const el of byHref) {
+        if (el.offsetParent !== null) { el.click(); return true; }
+      }
+      // Try class-based
+      const byClass = document.querySelectorAll('[class*="login"], [class*="ingresar"], [class*="sesion"]');
+      for (const el of byClass) {
+        if (el.offsetParent !== null) { el.click(); return true; }
       }
       return false;
     });
@@ -67,7 +61,9 @@ async function run() {
     }
 
     // Wait for login form
-    await page.waitForSelector('form, input[name="username"], input[type="email"], input[id*="user"], input[id*="email"], input[placeholder*="usuario"], input[placeholder*="email"]', { timeout: 15000 });
+    await page.waitForSelector('form, input, button[type="submit"]', { timeout: 15000 }).catch(() => {
+      // if no form found, continue anyway
+    });
 
     // Wait a moment for any animations
     await new Promise(r => setTimeout(r, 1000));
@@ -115,11 +111,19 @@ async function run() {
 
     // Click submit button
     const submitted = await page.evaluate(() => {
-      const submitBtns = document.querySelectorAll('button[type="submit"], input[type="submit"], button:has-text("Ingresar"), button:has-text("Entrar"), button:has-text("Acceder"), button:has-text("Iniciar")');
-      for (const btn of submitBtns) {
+      const submitTypes = document.querySelectorAll('button[type="submit"], input[type="submit"]');
+      for (const btn of submitTypes) {
         if (btn.offsetParent !== null) { btn.click(); return true; }
       }
-      // Try any visible submit-like button within the form
+      // Try buttons containing login text
+      const allBtns = document.querySelectorAll('button');
+      for (const btn of allBtns) {
+        const t = btn.textContent?.trim().toLowerCase() || '';
+        if (t.includes('ingresar') || t.includes('entrar') || t.includes('acceder') || t.includes('iniciar')) {
+          if (btn.offsetParent !== null) { btn.click(); return true; }
+        }
+      }
+      // Try any visible button within the form
       const form = document.querySelector('form');
       if (form) {
         const btns = form.querySelectorAll('button');
