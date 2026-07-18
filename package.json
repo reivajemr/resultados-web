@@ -6,7 +6,7 @@
   "scripts": {
     "start": "node index.js",
     "build": "cd client && npm install && npm run build && cd .. && npm install",
-    "postinstall": "node install-chrome.mjs",
+    "postinstall": "node -e \"console.log('Chrome se descargara en runtime si es necesario')\"",
     "dev": "node index.js"
   },
   "dependencies": {
@@ -21,8 +21,5 @@
   },
   "engines": {
     "node": ">=18.0.0"
-  },
-  "puppeteer": {
-    "cacheDirectory": "/opt/render/project/src/.puppeteer-cache"
   }
 }

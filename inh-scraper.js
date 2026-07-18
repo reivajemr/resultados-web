@@ -1,4 +1,7 @@
 import puppeteer from 'puppeteer';
+import { install, detectBrowserPlatform } from '@puppeteer/browsers';
+import { existsSync } from 'fs';
+import { join } from 'path';
 
 export class INHScraper {
   constructor({ username, password }) {
@@ -17,6 +20,18 @@ export class INHScraper {
 
   async start() {
     if (this.cache.isRunning) return;
+
+    if (!process.env.PUPPETEER_EXECUTABLE_PATH) {
+      const cacheDir = process.env.PUPPETEER_CACHE_DIR || join(process.cwd(), '.puppeteer-cache');
+      const platform = detectBrowserPlatform();
+      const buildId = '127.0.6533.88';
+      const chromeDir = join(cacheDir, 'chrome', `${platform}-${buildId}`);
+      if (!existsSync(chromeDir)) {
+        console.log('[INH] Descargando Chrome...');
+        await install({ browser: 'chrome', cacheDir, platform, buildId });
+        console.log('[INH] Chrome descargado');
+      }
+    }
 
     const launchOpts = {
       headless: true,
