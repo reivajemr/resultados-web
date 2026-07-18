@@ -17,4 +17,8 @@ jobs:
       - name: Install dependencies
         run: npm install puppeteer axios
       - name: Run scraper
+        env:
+          INH_USER: ${{ secrets.INH_USER }}
+          INH_PASS: ${{ secrets.INH_PASS }}
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
         run: node inh-github-actions.js
