@@ -78,26 +78,29 @@ async function run() {
 
     await new Promise(r => setTimeout(r, 500));
 
-    // Click "Iniciar Sesión"
-    await page.evaluate(() => {
-      for (const el of document.querySelectorAll('button')) {
-        const t = el.textContent?.trim().toLowerCase() || '';
-        if (t.includes('iniciar sesión') || t.includes('iniciar sesion') || t === 'iniciar') {
-          if (el.offsetParent !== null) { el.click(); return; }
-        }
-      }
-    });
-    console.log('[INH] Click en Iniciar Sesión');
+    // Press Enter to submit the form (more reliable than button click for React)
+    await page.keyboard.press('Enter');
+    console.log('[INH] Enter presionado');
 
-    // Wait for login to process
-    await new Promise(r => setTimeout(r, 5000));
+    // Wait for network idle (login API call)
+    try {
+      await page.waitForNetworkIdle({ timeout: 15000 });
+    } catch {}
+    await new Promise(r => setTimeout(r, 3000));
+
     if (DEBUG) await page.screenshot({ path: 'inh-after-login.png', fullPage: true });
 
     // Check if login succeeded
     const bodyText = await page.evaluate(() => document.body.innerText);
     const isLoggedIn = !bodyText.includes('Ingresar') || bodyText.includes('Cerrar Sesión') || bodyText.includes('Mi Cuenta') || bodyText.includes('Saldo');
     console.log('[INH] ¿Login exitoso?', isLoggedIn, '| URL:', page.url());
-    if (DEBUG) console.log('[INH] Text:', bodyText.substring(0, 1000).replace(/\n+/g, ' | '));
+
+    // Debug: print any error messages
+    const errorText = await page.evaluate(() => {
+      const errs = document.querySelectorAll('[class*="error"], [class*="Error"], [role="alert"]');
+      return Array.from(errs).map(e => e.textContent?.trim()).filter(Boolean);
+    });
+    if (errorText.length > 0) console.log('[INH] Errores en página:', errorText);
 
     // Dismiss any remaining modals
     let dismissed = true;
