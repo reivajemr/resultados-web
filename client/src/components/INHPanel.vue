@@ -24,7 +24,7 @@
               </div>
             </div>
 
-            <div v-if="Object.keys(raceDetails[race.raceNumber].dividends).length" class="dividends">
+            <div v-if="raceDetails[race.raceNumber].dividends && Object.keys(raceDetails[race.raceNumber].dividends).length" class="dividends">
               <h4>Dividendos</h4>
               <div v-for="(val, key) in raceDetails[race.raceNumber].dividends" :key="key" class="div-item">
                 <span class="div-label">{{ key }}</span>

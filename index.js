@@ -64,6 +64,18 @@ app.use(requireAuth);
 
 /* ───── API Routes ───── */
 
+function normalizeRaces(races) {
+  return (races || []).map(r => ({
+    ...r,
+    dividends: r.dividends || {},
+    horses: (r.horses || []).map(h => ({
+      ...h,
+      isScratched: h.isScratched || false,
+      position: h.position || null
+    }))
+  }));
+}
+
 app.get('/api/inh', (req, res) => {
   res.json({
     timestamp: new Date().toISOString(),
@@ -81,11 +93,20 @@ app.post('/api/inh/data', (req, res) => {
   const { program, races, isRunning } = req.body || {};
   inhData = {
     program: Array.isArray(program) ? program : inhData.program,
-    races: Array.isArray(races) ? races : inhData.races,
+    races: normalizeRaces(races),
     isRunning: typeof isRunning === 'boolean' ? isRunning : inhData.isRunning,
     lastPoll: new Date().toISOString()
   };
   console.log('[INH] Datos recibidos:', inhData.program.length, 'carreras,', inhData.races.length, 'actualizaciones');
+
+  // Persist to DB
+  if (db) {
+    const today = new Date().toISOString().split('T')[0];
+    db.guardarProgramaINH(today, inhData).catch(e =>
+      console.error('[INH] Error guardando en DB:', e.message)
+    );
+  }
+
   res.json({ ok: true });
 });
 
@@ -284,6 +305,21 @@ app.listen(PORT, () => {
   if (db) {
     await db.initAllTables();
     console.log('[DB] Persistencia activa');
+
+    // Load INH data from DB for today
+    const today = new Date().toISOString().split('T')[0];
+    const saved = await db.cargarProgramaINH(today);
+    if (saved) {
+      inhData = {
+        program: Array.isArray(saved.program) ? saved.program : [],
+        races: normalizeRaces(saved.races),
+        isRunning: saved.isRunning || false,
+        lastPoll: saved.lastPoll || null
+      };
+      console.log('[INH] Cargado desde DB:', inhData.program.length, 'carreras');
+    } else {
+      console.log('[INH] Sin datos guardados para hoy');
+    }
   } else {
     console.log('[DB] Sin DATABASE_URL — datos solo en memoria');
   }

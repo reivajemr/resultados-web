@@ -214,7 +214,7 @@ async function extractRaces(page) {
       return result;
     });
 
-    races.push({ raceNumber: raceNum, horses, track });
+    races.push({ raceNumber: raceNum, horses, track, dividends: {} });
     if (raceNum % 5 === 0 || raceNum === raceNumbers[raceNumbers.length - 1]) {
       console.log(`[INH]   ${track} C${raceNum}: ${horses.length} horses`);
     }
