@@ -1,8 +1,10 @@
 import { install, detectBrowserPlatform } from '@puppeteer/browsers';
-import { join } from 'path';
+import { fileURLToPath } from 'url';
+import { dirname, join } from 'path';
 import { existsSync } from 'fs';
 
-const CACHE_DIR = '/tmp/.puppeteer-cache';
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const CACHE_DIR = process.env.PUPPETEER_CACHE_DIR || join(__dirname, '.puppeteer-cache');
 const BUILD_ID = '127.0.6533.88';
 const MAX_RETRIES = 3;
 const DOWNLOAD_TIMEOUT = 600000;
@@ -55,4 +57,8 @@ export async function ensureChrome() {
 
   console.warn('[Chrome] No se pudo descargar después de', MAX_RETRIES, 'intentos');
   return null;
+}
+
+if (process.argv[1] && import.meta.url === `file://${process.argv[1].replace(/\\/g, '/')}`) {
+  ensureChrome().then(r => process.exit(r ? 0 : 1)).catch(() => process.exit(1));
 }

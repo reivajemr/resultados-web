@@ -9,7 +9,7 @@ import * as dbModule from './db.js';
 import { ensureChrome } from './install-chrome.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-process.env.PUPPETEER_CACHE_DIR = process.env.PUPPETEER_CACHE_DIR || '/tmp/.puppeteer-cache';
+process.env.PUPPETEER_CACHE_DIR = process.env.PUPPETEER_CACHE_DIR || path.join(__dirname, '.puppeteer-cache');
 
 const app = express();
 app.set('trust proxy', 1);
