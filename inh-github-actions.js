@@ -69,18 +69,10 @@ async function run() {
     });
     console.log('[INH] Inputs:', JSON.stringify(inputInfo));
 
-    // Find the non-password input (email) and type into it
-    const emailIdx = inputInfo.findIndex(x => x.type === 'email' || (x.type === 'text' && !x.type.includes('hidden')));
-    if (emailIdx === -1) throw new Error('No se encontró campo email');
-    await page.click(`input:nth-of-type(${emailIdx + 1})`);
-    await new Promise(r => setTimeout(r, 200));
-    await page.type(`input:nth-of-type(${emailIdx + 1})`, INH_USER, { delay: 40 });
-
-    const passIdx = inputInfo.findIndex(x => x.type === 'password');
-    if (passIdx === -1) throw new Error('No se encontró campo password');
-    await page.click(`input:nth-of-type(${passIdx + 1})`);
-    await new Promise(r => setTimeout(r, 200));
-    await page.type(`input:nth-of-type(${passIdx + 1})`, INH_PASS, { delay: 40 });
+    // Type into fields using known names/selectors
+    await page.type('input[name="email"]', INH_USER, { delay: 40 });
+    await new Promise(r => setTimeout(r, 300));
+    await page.type('input[name="password"]', INH_PASS, { delay: 40 });
 
     console.log('[INH] Formulario llenado con type()');
 
