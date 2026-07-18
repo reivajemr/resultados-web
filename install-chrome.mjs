@@ -1,14 +1,27 @@
 import { install, detectBrowserPlatform } from '@puppeteer/browsers';
 
 async function main() {
+  process.stderr.write('install-chrome.mjs: iniciando\n');
+
   const cacheDir = '/opt/render/project/src/.puppeteer-cache';
   const platform = detectBrowserPlatform();
-  if (!platform) { console.error('No se pudo detectar la plataforma'); process.exit(1); }
+
+  process.stderr.write('Plataforma: ' + platform + '\n');
+
+  if (!platform) {
+    process.stderr.write('ERROR: No se pudo detectar la plataforma\n');
+    process.exit(1);
+  }
 
   const buildId = '127.0.6533.88';
+  process.stderr.write('Instalando Chrome ' + buildId + ' en ' + cacheDir + '\n');
 
-  await install({ browser: 'chrome', cacheDir, platform, buildId });
-  console.log('Chrome instalado correctamente en', cacheDir);
+  const result = await install({ browser: 'chrome', cacheDir, platform, buildId });
+
+  process.stderr.write('Chrome instalado: ' + result.path + '\n');
 }
 
-main().catch(e => { console.error('Error instalando Chrome:', e.message); process.exit(1); });
+main().catch(e => {
+  process.stderr.write('ERROR instalando Chrome: ' + e.message + '\n');
+  process.exit(1);
+});
