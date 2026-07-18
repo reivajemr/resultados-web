@@ -1,0 +1,25 @@
+name: INH Scraper
+
+on:
+  schedule:
+    - cron: '*/10 12-23 * * 5-7'
+    - cron: '*/10 12-23 * * 1-4'
+  workflow_dispatch:
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install dependencies
+        run: npm install puppeteer axios
+      - name: Run scraper
+        env:
+          INH_USER: ${{ secrets.INH_USER }}
+          INH_PASS: ${{ secrets.INH_PASS }}
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+          RENDER_URL: ${{ vars.RENDER_URL }}
+        run: node inh-github-actions.js
