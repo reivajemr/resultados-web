@@ -6,6 +6,7 @@
   "scripts": {
     "start": "node index.js",
     "build": "cd client && npm install && npm run build && cd .. && npm install",
+    "postinstall": "npx --yes puppeteer browsers install chrome",
     "dev": "node index.js"
   },
   "dependencies": {
