@@ -14,9 +14,9 @@
             <span class="race-status" :class="statusClass(race.statusText)">{{ statusLabel(race.statusText) }}</span>
           </div>
 
-          <div v-if="raceDetails[race.raceNumber]" class="race-body">
-            <div v-if="raceDetails[race.raceNumber].horses?.length" class="horses">
-              <div v-for="h in raceDetails[race.raceNumber].horses" :key="h.programNumber" class="horse-row" :class="{ scratched: h.isScratched }">
+          <div v-if="getRaceDetails(race)" class="race-body">
+            <div v-if="getRaceDetails(race).horses?.length" class="horses">
+              <div v-for="h in getRaceDetails(race).horses" :key="h.programNumber" class="horse-row" :class="{ scratched: h.isScratched }">
                 <span class="horse-num">#{{ h.programNumber }}</span>
                 <span class="horse-name">{{ h.horseName }}</span>
                 <span v-if="h.position" class="horse-pos">{{ h.position }}°</span>
@@ -24,9 +24,9 @@
               </div>
             </div>
 
-            <div v-if="raceDetails[race.raceNumber].dividends && Object.keys(raceDetails[race.raceNumber].dividends).length" class="dividends">
+            <div v-if="getRaceDetails(race).dividends && Object.keys(getRaceDetails(race).dividends).length" class="dividends">
               <h4>Dividendos</h4>
-              <div v-for="(val, key) in raceDetails[race.raceNumber].dividends" :key="key" class="div-item">
+              <div v-for="(val, key) in getRaceDetails(race).dividends" :key="key" class="div-item">
                 <span class="div-label">{{ key }}</span>
                 <span class="div-value">{{ val }}</span>
               </div>
@@ -80,11 +80,17 @@ const raceDetails = computed(() => {
   const map = {}
   if (props.data?.races) {
     for (const r of props.data.races) {
-      map[r.raceNumber] = r
+      const key = r.track ? `${r.track}-${r.raceNumber}` : `${r.raceNumber}`
+      map[key] = r
     }
   }
   return map
 })
+
+function getRaceDetails(race) {
+  const key = race.track ? `${race.track}-${race.raceNumber}` : `${race.raceNumber}`
+  return raceDetails.value?.[key] || raceDetails.value?.[race.raceNumber]
+}
 
 function statusClass(s) {
   if (!s) return 'status-pending'

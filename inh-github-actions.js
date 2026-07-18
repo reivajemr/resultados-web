@@ -161,11 +161,13 @@ async function switchTrack(page, trackName) {
 }
 
 async function extractRaces(page) {
-  // Detect track
+  // Detect track from select trigger (case-insensitive)
   const track = await page.evaluate(() => {
-    const t = document.body.innerText;
-    if (t.includes('VALENCIA')) return 'Valencia';
-    if (t.includes('SANTA RITA')) return 'Santa Rita';
+    const trigger = document.querySelector('[data-slot="select-value"]');
+    const text = trigger?.textContent?.trim() || document.body.innerText;
+    const u = text.toUpperCase();
+    if (u.includes('VALENCIA')) return 'Valencia';
+    if (u.includes('SANTA RITA')) return 'Santa Rita';
     return 'La Rinconada';
   });
 
