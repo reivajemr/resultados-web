@@ -270,7 +270,15 @@ async function extractRaces(page) {
             if (/^[\d\.\-]+$/.test(wt) || wt === '-') { weight = wt; break; }
           }
         }
-        horses.push({ programNumber, horseName, dividend, jockey, trainer, weight });
+        // Detect scratched horse (retirado): line-through, opacity, "RETIRADO" text, or muted styles
+        const rowHtml = row.outerHTML;
+        const isScratched = (
+          rowClass.includes('line-through') || rowClass.includes('opacity') ||
+          rowClass.includes('muted') || rowClass.includes('retirado') ||
+          row.querySelector('s, del, [class*="line-through"], [class*="retirado"], [style*="line-through"], [style*="opacity"]') ||
+          /\bRETIRADO\b/i.test(rowHtml) || /\bScratched\b/i.test(rowHtml)
+        );
+        horses.push({ programNumber, horseName, dividend, jockey, trainer, weight, isScratched: !!isScratched });
       }
 
       // 3. Results + exotic dividends: search full page for this race's results

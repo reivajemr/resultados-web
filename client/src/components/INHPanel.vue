@@ -25,10 +25,10 @@
               </thead>
               <tbody>
                 <tr v-for="h in sortedHorses(race)" :key="h.programNumber"
-                    :class="{ winner: h.position === 1, placed: h.position === 2 || h.position === 3 }">
-                  <td class="pos">{{ h.position }}°</td>
+                    :class="{ winner: h.position === 1, placed: h.position === 2 || h.position === 3, scratched: h.isScratched }">
+                  <td class="pos">{{ h.position ? h.position + '°' : '—' }}</td>
                   <td class="num">{{ h.programNumber }}</td>
-                  <td class="name">{{ h.horseName }}</td>
+                  <td class="name">{{ h.horseName }}<span v-if="h.isScratched" class="retirado-badge">R</span></td>
                   <td class="div">{{ h.ganadorDividend || '—' }}</td>
                   <td class="div">{{ h.placeDividend || '—' }}</td>
                 </tr>
@@ -59,10 +59,10 @@
                 <tr><th>No</th><th>Div.</th><th>Ejemplar</th><th>Kg</th></tr>
               </thead>
               <tbody>
-                <tr v-for="h in race.horses" :key="h.programNumber">
+                <tr v-for="h in race.horses" :key="h.programNumber" :class="{ scratched: h.isScratched }">
                   <td class="num">{{ h.programNumber }}</td>
                   <td class="div">{{ h.dividend || '—' }}</td>
-                  <td class="name">{{ h.horseName }}</td>
+                  <td class="name">{{ h.horseName }}<span v-if="h.isScratched" class="retirado-badge">R</span></td>
                   <td class="kg">{{ h.weight || '—' }}</td>
                 </tr>
               </tbody>
@@ -110,7 +110,12 @@ const openRaces = computed(() => {
 
 function sortedHorses(race) {
   if (!race.horses) return []
-  return [...race.horses].filter(h => h.position).sort((a, b) => (a.position || 99) - (b.position || 99))
+  return [...race.horses].sort((a, b) => {
+    if (a.position && b.position) return a.position - b.position
+    if (a.position) return -1
+    if (b.position) return 1
+    return parseInt(a.programNumber) - parseInt(b.programNumber)
+  })
 }
 </script>
 
@@ -134,6 +139,8 @@ th { background: #fafafa; padding: 6px 8px; text-align: left; font-weight: 600; 
 td { padding: 5px 8px; border-bottom: 1px solid #f0f0f0; }
 tr.winner { background: #fff8e1; font-weight: 600; }
 tr.placed { background: #f5f5f5; }
+tr.scratched { opacity: 0.5; text-decoration: line-through; }
+.retirado-badge { display: inline-block; background: #d32f2f; color: #fff; font-size: 0.6rem; font-weight: 700; padding: 0 4px; border-radius: 3px; margin-left: 4px; vertical-align: middle; line-height: 1.4; }
 .pos { font-weight: 700; color: #1a1a2e; width: 30px; }
 .num { font-weight: 600; width: 28px; color: #333; }
 .name { flex: 1; }
