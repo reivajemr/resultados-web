@@ -198,13 +198,28 @@ async function extractRaces(page) {
       const pageText = document.body.innerText;
       const upper = pageText.toUpperCase();
 
-      // ── Status & time ──
+      // ── Status, time & date ──
       let statusText = 'ABIERTA';
       let raceTime = '';
+      let raceDate = '';
       if (upper.includes('CARRERA CERRADA')) {
         statusText = 'CERRADA';
         const tm = pageText.match(/Hora:\s*(\d{1,2}:\d{2}\s*[ap]\.?\s*m\.?)/i);
         if (tm) raceTime = tm[1].trim();
+      }
+      // Always try to extract time (open races have it in a bold numeric span)
+      if (!raceTime) {
+        const tm2 = pageText.match(/(\d{1,2}:\d{2}\s*[ap]\.?\s*m\.?)/i);
+        if (tm2) raceTime = tm2[1].trim();
+      }
+      // Extract race date from text like "Domingo · 19 de julio de 2026"
+      const dateMatch = pageText.match(/(\w+)\s*·\s*(\d{1,2})\s+de\s+(\w+)\s+de\s+(\d{4})/i);
+      if (dateMatch) {
+        const dayNames = { 'domingo': 'Domingo', 'lunes': 'Lunes', 'martes': 'Martes', 'miércoles': 'Miércoles', 'jueves': 'Jueves', 'viernes': 'Viernes', 'sábado': 'Sábado' };
+        const monthNames = { 'enero': 'Enero', 'febrero': 'Febrero', 'marzo': 'Marzo', 'abril': 'Abril', 'mayo': 'Mayo', 'junio': 'Junio', 'julio': 'Julio', 'agosto': 'Agosto', 'septiembre': 'Septiembre', 'octubre': 'Octubre', 'noviembre': 'Noviembre', 'diciembre': 'Diciembre' };
+        const day = dayNames[dateMatch[1].toLowerCase()] || dateMatch[1];
+        const month = monthNames[dateMatch[3].toLowerCase()] || dateMatch[3];
+        raceDate = `${day} ${dateMatch[2]} de ${month} ${dateMatch[4]}`.replace(/\s+/g, ' ');
       }
 
       // ── Horses from race grid ──
@@ -263,6 +278,19 @@ async function extractRaces(page) {
           row.querySelector('s, del, [class*="line-through"], [class*="retirado"], [style*="line-through"], [style*="opacity"]') ||
           /\bRETIRADO\b/i.test(row.outerHTML));
         horses.push({ programNumber, horseName, dividend, jockey, trainer, weight, isScratched });
+      }
+
+      // ── Scratched horses outside the grid (opacity-50 + line-through + "Retirado") ──
+      for (const row of document.querySelectorAll('[class*="opacity-50"]')) {
+        if (row.querySelector('[class*="races-tab-grid"]')) continue;
+        const numSpan = row.querySelector('[class*="rounded"]');
+        const nameSpan = row.querySelector('.line-through, [class*="line-through"]');
+        if (numSpan && nameSpan) {
+          const pn = numSpan.textContent?.trim() || '';
+          if (/^\d+$/.test(pn) && !horses.find(h => h.programNumber === pn)) {
+            horses.push({ programNumber: pn, horseName: nameSpan.textContent?.trim() || '', dividend: '', jockey: '', trainer: '', weight: '', isScratched: true });
+          }
+        }
       }
 
       // ── Results from page text ──
@@ -324,10 +352,10 @@ async function extractRaces(page) {
         }
       }
 
-      return { horses, statusText, raceTime, exoticDividends, hasCerra: upper.includes('CARRERA CERRADA'), hasResultados: pageText.indexOf(`Resultados C${num}`) !== -1 };
+      return { horses, statusText, raceTime, raceDate, exoticDividends };
     }, raceNum);
 
-    if (raceNum === 1) console.log(`[INH DEBUG] ${track} C${raceNum}: status="${raceData.statusText}" time="${raceData.raceTime}" horses=${raceData.horses.length} cerrada=${raceData.hasCerra} resultados=${raceData.hasResultados}`);
+    if (raceNum === 1) console.log(`[INH DEBUG] ${track} C${raceNum}: status="${raceData.statusText}" time="${raceData.raceTime}" date="${raceData.raceDate}" horses=${raceData.horses.length}`);
 
     races.push({
       raceNumber: raceNum,
@@ -335,6 +363,7 @@ async function extractRaces(page) {
       track,
       statusText: raceData.statusText,
       raceTime: raceData.raceTime,
+      raceDate: raceData.raceDate || '',
       dividends: raceData.exoticDividends || {}
     });
     if (raceNum % 3 === 0 || raceNum === raceNumbers[raceNumbers.length - 1]) {
@@ -390,6 +419,7 @@ async function run() {
       raceNumber: r.raceNumber,
       track: r.track,
       raceTime: r.raceTime || '',
+      raceDate: r.raceDate || '',
       statusText: r.statusText || 'ABIERTA'
     }));
 
