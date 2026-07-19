@@ -212,8 +212,8 @@ async function extractRaces(page) {
         const tm2 = pageText.match(/(\d{1,2}:\d{2}\s*[ap]\.?\s*m\.?)/i);
         if (tm2) raceTime = tm2[1].trim();
       }
-      // Extract race date from text like "Domingo · 19 de julio de 2026"
-      const dateMatch = pageText.match(/(\w+)\s*·\s*(\d{1,2})\s+de\s+(\w+)\s+de\s+(\d{4})/i);
+      // Extract race date from text like "Domingo · 19 de julio de 2026" or "Domingo 19 de julio de 2026"
+      const dateMatch = pageText.match(/(\w+)\s*·?\s*(\d{1,2})\s+de\s+(\w+)\s+de\s+(\d{4})/i);
       if (dateMatch) {
         const dayNames = { 'domingo': 'Domingo', 'lunes': 'Lunes', 'martes': 'Martes', 'miércoles': 'Miércoles', 'jueves': 'Jueves', 'viernes': 'Viernes', 'sábado': 'Sábado' };
         const monthNames = { 'enero': 'Enero', 'febrero': 'Febrero', 'marzo': 'Marzo', 'abril': 'Abril', 'mayo': 'Mayo', 'junio': 'Junio', 'julio': 'Julio', 'agosto': 'Agosto', 'septiembre': 'Septiembre', 'octubre': 'Octubre', 'noviembre': 'Noviembre', 'diciembre': 'Diciembre' };
@@ -328,15 +328,28 @@ async function extractRaces(page) {
             if (/^[\d.,]+$/.test(plaLine) && plaLine !== '-') place = plaLine;
           }
           resultRows.push({ position, programNumber: numLine, horseName: nameLine, ganador, place });
+        }
 
-          // Check if next lines have exotic plays in the section
-          const exoticIdx = section.indexOf('Superfecta');
-          if (exoticIdx !== -1) {
-            const exoticSection = section.substring(exoticIdx);
-            const exoticLines = exoticSection.split('\n');
-            for (const el of exoticLines) {
-              const m = el.match(/^(\w[\w\s]*?)\s+(?:\([^)]*\))?\s*([\d.,]+)\s*\/\s*Bs/i);
-              if (m) exoticDividends[m[1].trim()] = m[2].trim();
+        // ── Exotic dividends (multi-line flex layout) ──
+        const exoticStart = section.indexOf('Jugadas Exóticas');
+        if (exoticStart !== -1) {
+          const exoticSection = section.substring(exoticStart);
+          const exoticLines = exoticSection.split('\n');
+          for (let i = 0; i < exoticLines.length; i++) {
+            const el = exoticLines[i].trim();
+            if (!el) continue;
+            // Match exotic play name: Superfecta, Trifecta, Exacta, etc.
+            if (/^(Superfecta|Trifecta|Exacta|Perfecta|Dupleta|Doble\s*|Place\s*Acumulado)/i.test(el)) {
+              const name = el.replace(/[:\s]+$/, '').trim();
+              // Look for value in next 3 lines
+              let value = '';
+              for (let j = i + 1; j < Math.min(i + 4, exoticLines.length); j++) {
+                const nl = exoticLines[j].trim();
+                if (/^[\d.,]+$/.test(nl)) { value = nl; break; }
+                const vm = nl.match(/^([\d.,]+)\s*\/\s*Bs/i);
+                if (vm) { value = vm[1]; break; }
+              }
+              if (value) exoticDividends[name] = value;
             }
           }
         }
