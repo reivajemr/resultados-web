@@ -334,7 +334,8 @@ async function extractRaces(page) {
         // Find value lines first ("9.524,82 / Bs.40"), then look back for name
         const lines2 = section.split('\n');
         for (let i = 0; i < lines2.length; i++) {
-          const vm = lines2[i].match(/^([\d.,]+)\s*\/\s*Bs/i);
+          const trimmed = lines2[i].trim();
+          const vm = trimmed.match(/^([\d.,]+)\s*\/\s*Bs/i);
           if (vm) {
             let name = (lines2[i - 1] || '').trim();
             // Strip parenthetical and trailing whitespace
