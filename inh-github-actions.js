@@ -208,46 +208,54 @@ async function extractRaces(page) {
     // Extract ALL data for this race
     const raceData = await page.evaluate((num) => {
       const pageText = document.body.innerText;
-      const upper = pageText.toUpperCase();
 
       // ── Status, time & date ──
       let statusText = 'ABIERTA';
       let raceTime = '';
       let raceDate = '';
-      if (upper.includes('CARRERA CERRADA')) {
+
+      // Find "CARRERA CERRADA" span to set status AND extract time
+      const allSpans = Array.from(document.querySelectorAll('span'));
+      const statusSpan = allSpans.find(el => (el.textContent || '').trim() === 'CARRERA CERRADA');
+      if (statusSpan) {
         statusText = 'CERRADA';
+        // Extract time from the parent rounded-lg container
+        const parent = statusSpan.closest('[class*="rounded-lg"]');
+        if (parent) {
+          const txt = parent.innerText || '';
+          const m = txt.match(/(\d{1,2}:\d{2}\s*[ap]\.?\s*m\.?)/i);
+          if (m) raceTime = m[1].trim();
+        }
       }
-      // Find the info box: a container with both "Hoy" and a time with am/pm
-      // Closed races: "CARRERA CERRADA" + "Hora:" — use pageText (visible text only)
-      if (upper.includes('CARRERA CERRADA')) {
+
+      // Open races: find "Hoy"/"mañana" span, then get tabular-nums from its rounded-lg parent
+      if (!raceTime) {
+        for (const el of allSpans) {
+          const txt = (el.textContent || '').trim();
+          if (txt === 'Hoy' || txt === 'Mañana') {
+            const parent = el.closest('[class*="rounded-lg"]');
+            if (parent) {
+              const ts = parent.querySelector('[class*="tabular-nums"]');
+              if (ts) {
+                const t = ts.textContent?.trim() || '';
+                if (/[ap]\.?\s*m/i.test(t)) { raceTime = t; break; }
+              }
+            }
+          }
+        }
+      }
+
+      // Ultra-fallback: regex on pageText
+      if (!raceTime) {
         const tm = pageText.match(/Hora:\s*(\d{1,2}:\d{2}\s*[ap]\.?\s*m\.?)/i);
         if (tm) raceTime = tm[1].trim();
       }
-      // Open races: find visible info box with "Hoy" + time
-      if (!raceTime) {
-        const allEls = document.querySelectorAll('[class*="rounded-lg"]');
-        let infoBox = null;
-        for (const el of allEls) {
-          const txt = el.innerText || '';
-          if (/(hoy|mañana)/i.test(txt) && /\d{1,2}:\d{2}\s*[ap]\.?\s*m/i.test(txt)) {
-            infoBox = el; break;
-          }
-        }
-        if (infoBox) {
-          const ts = infoBox.querySelector('[class*="tabular-nums"]');
-          if (ts) {
-            const t = ts.textContent?.trim() || '';
-            if (/[ap]\.?\s*m/i.test(t)) raceTime = t;
-          }
-        }
-      }
+
       // Extract race date from rounded-lg info box (may not exist for closed races)
-      const allInfos = document.querySelectorAll('[class*="rounded-lg"]');
-      let infoBox = null;
-      for (const el of allInfos) {
-        const txt = el.innerText || '';
-        if (/(hoy|mañana)/i.test(txt)) { infoBox = el; break; }
-      }
+      let infoBox = allSpans.find(el => {
+        const t = (el.textContent || '').trim();
+        return t === 'Hoy' || t === 'Mañana';
+      })?.closest('[class*="rounded-lg"]');
       const infoText = infoBox?.innerText || pageText;
       const dateMatch = infoText.match(/(\w+)\s*·?\s*(\d{1,2})\s+de\s+(\w+)\s+de\s+(\d{4})/i);
       if (dateMatch) {
