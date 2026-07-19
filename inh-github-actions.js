@@ -194,21 +194,17 @@ async function extractRaces(page) {
     await new Promise(r => setTimeout(r, 1200));
 
     // Extract ALL data for this race
-    if (num === 1) console.log(`[INH DEBUG] Starting extraction for ${track} C${num}`);
     const raceData = await page.evaluate((num) => {
+      const pageText = document.body.innerText;
+      const upper = pageText.toUpperCase();
+
       // ── Status & time ──
       let statusText = 'ABIERTA';
       let raceTime = '';
-      const statusBadge = Array.from(document.querySelectorAll('div, span')).find(el =>
-        el.textContent?.toUpperCase().includes('CARRERA CERRADA')
-      );
-      if (statusBadge) {
+      if (upper.includes('CARRERA CERRADA')) {
         statusText = 'CERRADA';
-        const parent = statusBadge.closest('[class*="flex"]');
-        if (parent) {
-          const timeSpan = parent.querySelector('[class*="text-muted-foreground"]');
-          if (timeSpan) raceTime = timeSpan.textContent?.replace(/^Hora:\s*/i, '').trim() || '';
-        }
+        const tm = pageText.match(/Hora:\s*(\d{1,2}:\d{2}\s*[ap]\.?\s*m\.?)/i);
+        if (tm) raceTime = tm[1].trim();
       }
 
       // ── Horses from race grid ──
@@ -269,61 +265,50 @@ async function extractRaces(page) {
         horses.push({ programNumber, horseName, dividend, jockey, trainer, weight, isScratched });
       }
 
-      // ── Results (positions + exotic dividends) ──
+      // ── Results from page text ──
       const resultRows = [];
       const exoticDividends = {};
 
-      // Find the results header: "Resultados C{N}"
-      const resultsHeader = Array.from(document.querySelectorAll('span, div')).find(el => {
-        const t = el.textContent?.trim().toUpperCase() || '';
-        return t === `RESULTADOS C${num}` || t.startsWith(`RESULTADOS C${num}`) && el.querySelector('svg');
-      });
-      if (resultsHeader) {
-        // Results grid is in the same space-y container as the header
-        const resultsContainer = resultsHeader.closest('[class*="space-y"]');
-        if (resultsContainer) {
-          // Each position row is a div with class containing "grid grid-cols-[2.5rem_2.5rem..."
-          const posGrids = resultsContainer.querySelectorAll('[class*="grid grid-cols-["], [class*="grid-cols-["]');
-          for (const grid of posGrids) {
-            // Find the circle/position element
-            const posEl = grid.querySelector('[class*="rounded-full"]');
-            if (!posEl) continue;
-            const posMatch = posEl.textContent?.trim().match(/^(\d+)°/);
-            if (!posMatch) continue;
-            const position = parseInt(posMatch[1]);
-            // Program number: the next span with number
-            const numSpan = grid.querySelector('[class*="rounded"] span, [class*="rounded"]:not([class*="rounded-full"])') ||
-                            Array.from(grid.querySelectorAll('span')).find(s => /^\d+$/.test(s.textContent?.trim()));
-            let programNumber = '';
-            if (numSpan) {
-              const t = numSpan.textContent?.trim() || '';
-              if (/^\d+$/.test(t)) programNumber = t;
-            }
-            // Horse name: element with min-w-0 or truncate
-            const nameCell = grid.querySelector('[class*="min-w-0"]') || grid.querySelector('[class*="truncate"]');
-            const horseName = nameCell?.textContent?.trim() || '';
-            // Ganador & Place: text-right spans (desktop columns)
-            const rightSpans = grid.querySelectorAll('span.text-right');
-            const ganador = rightSpans[0]?.textContent?.trim() || '';
-            const place = rightSpans[1]?.textContent?.trim() || '';
+      // Find results section for this race: between "Resultados C{N}" and next "Resultados C" or end
+      const headerIdx = pageText.indexOf(`Resultados C${num}`);
+      if (headerIdx !== -1) {
+        const nextHeader = pageText.indexOf('Resultados C', headerIdx + 1);
+        const sectionEnd = nextHeader !== -1 ? nextHeader : headerIdx + 3000;
+        const section = pageText.substring(headerIdx, sectionEnd);
+        const lines = section.split('\n');
 
-            resultRows.push({ position, programNumber, horseName, ganador, place });
+        for (let i = 0; i < lines.length; i++) {
+          const line = lines[i].trim();
+          // Position line: "1°" on its own line
+          const posMatch = line.match(/^(\d+)°$/);
+          if (!posMatch) continue;
+          const position = parseInt(posMatch[1]);
+          // Next line: program number
+          const numLine = lines[i + 1]?.trim() || '';
+          if (!/^\d+$/.test(numLine)) continue;
+          // Next line: horse name
+          const nameLine = lines[i + 2]?.trim() || '';
+          // Next lines: ganador, place (or mobile combined "G: X P: Y")
+          const ganLine = lines[i + 3]?.trim() || '';
+          const plaLine = lines[i + 4]?.trim() || '';
+          let ganador = '', place = '';
+          const gpMatch = ganLine.match(/^G[:\s]*([\d.,]+)\s+P[:\s]*([\d.,]+)/i);
+          if (gpMatch) {
+            ganador = gpMatch[1]; place = gpMatch[2];
+          } else {
+            if (/^[\d.,]+$/.test(ganLine) && ganLine !== '-') ganador = ganLine;
+            if (/^[\d.,]+$/.test(plaLine) && plaLine !== '-') place = plaLine;
           }
-        }
+          resultRows.push({ position, programNumber: numLine, horseName: nameLine, ganador, place });
 
-        // ── Exotic dividends: "Jugadas Exóticas" section ──
-        const exoticRounded = Array.from(resultsContainer.querySelectorAll('[class*="rounded-lg"]')).find(el =>
-          el.textContent?.includes('Jugadas Exóticas')
-        );
-        if (exoticRounded) {
-          const items = exoticRounded.querySelectorAll('[class*="border-t"]');
-          for (const item of items) {
-            const nameEl = item.querySelector('.font-medium');
-            const valueEl = item.querySelector('[class*="text-green"]');
-            if (nameEl && valueEl) {
-              const name = nameEl.textContent?.trim() || '';
-              const value = valueEl.textContent?.trim() || '';
-              if (name && value) exoticDividends[name] = value;
+          // Check if next lines have exotic plays in the section
+          const exoticIdx = section.indexOf('Superfecta');
+          if (exoticIdx !== -1) {
+            const exoticSection = section.substring(exoticIdx);
+            const exoticLines = exoticSection.split('\n');
+            for (const el of exoticLines) {
+              const m = el.match(/^(\w[\w\s]*?)\s+(?:\([^)]*\))?\s*([\d.,]+)\s*\/\s*Bs/i);
+              if (m) exoticDividends[m[1].trim()] = m[2].trim();
             }
           }
         }
@@ -334,15 +319,19 @@ async function extractRaces(page) {
         const horse = horses.find(h => h.programNumber === result.programNumber);
         if (horse) {
           horse.position = result.position;
-          if (result.ganador && result.ganador !== '-') horse.ganadorDividend = result.ganador;
-          if (result.place && result.place !== '-') horse.placeDividend = result.place;
+          if (result.ganador) horse.ganadorDividend = result.ganador;
+          if (result.place) horse.placeDividend = result.place;
         }
       }
 
-      return { horses, statusText, raceTime, exoticDividends, resultRows, debug: `statusBadge=${!!statusBadge}, resultsHeader=${!!resultsHeader}` };
+      return { horses, statusText, raceTime, exoticDividends, hasCerra: upper.includes('CARRERA CERRADA'), hasResultados: pageText.indexOf(`Resultados C${num}`) !== -1 };
     }, raceNum);
 
-    if (raceNum === 1) console.log(`[INH DEBUG] ${track} C${raceNum}: ${JSON.stringify({ statusText: raceData.statusText, raceTime: raceData.raceTime, horses: raceData.horses.length, posRows: raceData.resultRows?.length, exotics: Object.keys(raceData.exoticDividends || {}).length, debug: raceData.debug })}`);
+    if (raceNum === 1) console.log(`[INH DEBUG] ${track} C${raceNum}: status="${raceData.statusText}" time="${raceData.raceTime}" horses=${raceData.horses.length} cerrada=${raceData.hasCerra} resultados=${raceData.hasResultados}`);
+
+    races.push({
+      raceNumber: raceNum,
+      horses: raceData.horses,
 
     races.push({
       raceNumber: raceNum,
