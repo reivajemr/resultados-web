@@ -183,6 +183,18 @@ async function extractRaces(page) {
 
   console.log(`[INH] ${track}: ${raceNumbers.length} races (${raceNumbers.join(', ')})`);
 
+  // Force hydration: C1 tab might show SSR placeholder data on initial load.
+  // Click a non-first tab first so that clicking C1 later triggers real data fetch.
+  if (raceNumbers.length > 1) {
+    const second = raceNumbers[1];
+    await page.evaluate((num) => {
+      for (const btn of document.querySelectorAll('button')) {
+        if (btn.textContent?.trim() === `C${num}`) { btn.click(); return; }
+      }
+    }, second);
+    await new Promise(r => setTimeout(r, 1500));
+  }
+
   const races = [];
   for (const raceNum of raceNumbers) {
     // Click tab
@@ -206,29 +218,37 @@ async function extractRaces(page) {
         statusText = 'CERRADA';
       }
       // Find the info box: a container with both "Hoy" and a time with am/pm
-      const allEls = document.querySelectorAll('[class*="rounded-lg"]');
-      let infoBox = null;
-      for (const el of allEls) {
-        const txt = el.textContent || '';
-        if (/(hoy|mañana)/i.test(txt) && /\d{1,2}:\d{2}\s*[ap]\.?\s*m/i.test(txt)) {
-          infoBox = el; break;
-        }
-      }
-      // Extract race time from the info box
-      if (infoBox) {
-        const ts = infoBox.querySelector('[class*="tabular-nums"]');
-        if (ts) {
-          const t = ts.textContent?.trim() || '';
-          if (/[ap]\.?\s*m/i.test(t)) raceTime = t;
-        }
-      }
-      // Fallback: Hora: pattern
-      if (!raceTime) {
+      // Closed races: "CARRERA CERRADA" + "Hora:" — use pageText (visible text only)
+      if (upper.includes('CARRERA CERRADA')) {
         const tm = pageText.match(/Hora:\s*(\d{1,2}:\d{2}\s*[ap]\.?\s*m\.?)/i);
         if (tm) raceTime = tm[1].trim();
       }
-      // Extract race date from info box
-      const infoText = infoBox?.textContent || pageText;
+      // Open races: find visible info box with "Hoy" + time
+      if (!raceTime) {
+        const allEls = document.querySelectorAll('[class*="rounded-lg"]');
+        let infoBox = null;
+        for (const el of allEls) {
+          const txt = el.innerText || '';
+          if (/(hoy|mañana)/i.test(txt) && /\d{1,2}:\d{2}\s*[ap]\.?\s*m/i.test(txt)) {
+            infoBox = el; break;
+          }
+        }
+        if (infoBox) {
+          const ts = infoBox.querySelector('[class*="tabular-nums"]');
+          if (ts) {
+            const t = ts.textContent?.trim() || '';
+            if (/[ap]\.?\s*m/i.test(t)) raceTime = t;
+          }
+        }
+      }
+      // Extract race date from rounded-lg info box (may not exist for closed races)
+      const allInfos = document.querySelectorAll('[class*="rounded-lg"]');
+      let infoBox = null;
+      for (const el of allInfos) {
+        const txt = el.innerText || '';
+        if (/(hoy|mañana)/i.test(txt)) { infoBox = el; break; }
+      }
+      const infoText = infoBox?.innerText || pageText;
       const dateMatch = infoText.match(/(\w+)\s*·?\s*(\d{1,2})\s+de\s+(\w+)\s+de\s+(\d{4})/i);
       if (dateMatch) {
         const dayNames = { 'domingo': 'Domingo', 'lunes': 'Lunes', 'martes': 'Martes', 'miércoles': 'Miércoles', 'jueves': 'Jueves', 'viernes': 'Viernes', 'sábado': 'Sábado' };
