@@ -330,17 +330,31 @@ async function extractRaces(page) {
           resultRows.push({ position, programNumber: numLine, horseName: nameLine, ganador, place });
         }
 
-        // ── Exotic dividends (multi-line flex layout) ──
-        // Find value lines first ("9.524,82 / Bs.40"), then look back for name
-        const lines2 = section.split('\n');
-        for (let i = 0; i < lines2.length; i++) {
-          const trimmed = lines2[i].trim();
-          const vm = trimmed.match(/^([\d.,]+)\s*\/\s*Bs/i);
-          if (vm) {
-            let name = (lines2[i - 1] || '').trim();
-            // Strip parenthetical and trailing whitespace
-            name = name.replace(/\s*\([^)]*\)\s*$/, '').trim();
-            if (name && vm[1]) exoticDividends[name] = vm[1];
+        // ── Exotic dividends from DOM ──
+        // Find the parent container for this race by looking for the space-y-3 div
+        // that contains "Resultados C{num}" and then find "Jugadas Exóticas" within it
+        const raceContainers = document.querySelectorAll('[class*="space-y-3"]');
+        for (const container of raceContainers) {
+          const containerText = container.textContent || '';
+          if (!containerText.includes(`Resultados C${num}`)) continue;
+          // Find the exotic header within this container
+          for (const child of container.children) {
+            const firstText = child.firstElementChild?.textContent?.trim() || '';
+            if (firstText === 'Jugadas Exóticas') {
+              // This is the exotic container
+              const items = Array.from(child.children).slice(1); // skip header
+              for (const item of items) {
+                const nameEl = item.querySelector('[class*="font-medium"]');
+                const valueEl = item.querySelector('[class*="text-green"]');
+                if (nameEl && valueEl) {
+                  let ename = nameEl.textContent.trim();
+                  // Strip trailing parenthetical like "(04-01-06-03)"
+                  ename = ename.replace(/\s*\([^)]*\)\s*$/, '').trim();
+                  if (ename) exoticDividends[ename] = valueEl.textContent.trim();
+                }
+              }
+              break;
+            }
           }
         }
       }
