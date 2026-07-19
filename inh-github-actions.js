@@ -331,26 +331,15 @@ async function extractRaces(page) {
         }
 
         // ── Exotic dividends (multi-line flex layout) ──
-        const exoticStart = section.indexOf('Jugadas Exóticas');
-        if (exoticStart !== -1) {
-          const exoticSection = section.substring(exoticStart);
-          const exoticLines = exoticSection.split('\n');
-          for (let i = 0; i < exoticLines.length; i++) {
-            const el = exoticLines[i].trim();
-            if (!el) continue;
-            // Match exotic play name: Superfecta, Trifecta, Exacta, etc.
-            if (/^(Superfecta|Trifecta|Exacta|Perfecta|Dupleta|Doble\s*|Place\s*Acumulado)/i.test(el)) {
-              const name = el.replace(/[:\s]+$/, '').trim();
-              // Look for value in next 3 lines
-              let value = '';
-              for (let j = i + 1; j < Math.min(i + 4, exoticLines.length); j++) {
-                const nl = exoticLines[j].trim();
-                if (/^[\d.,]+$/.test(nl)) { value = nl; break; }
-                const vm = nl.match(/^([\d.,]+)\s*\/\s*Bs/i);
-                if (vm) { value = vm[1]; break; }
-              }
-              if (value) exoticDividends[name] = value;
-            }
+        // Find value lines first ("9.524,82 / Bs.40"), then look back for name
+        const lines2 = section.split('\n');
+        for (let i = 0; i < lines2.length; i++) {
+          const vm = lines2[i].match(/^([\d.,]+)\s*\/\s*Bs/i);
+          if (vm) {
+            let name = (lines2[i - 1] || '').trim();
+            // Strip parenthetical and trailing whitespace
+            name = name.replace(/\s*\([^)]*\)\s*$/, '').trim();
+            if (name && vm[1]) exoticDividends[name] = vm[1];
           }
         }
       }
