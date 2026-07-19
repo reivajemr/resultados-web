@@ -205,18 +205,19 @@ async function extractRaces(page) {
       if (upper.includes('CARRERA CERRADA')) {
         statusText = 'CERRADA';
       }
-      // Extract race time from the info box span (has am/pm format)
-      // Tab button spans also have tabular-nums but only show "HH:MM" without am/pm
-      for (const ts of document.querySelectorAll('span[class*="tabular-nums"]')) {
-        const t = ts.textContent?.trim() || '';
-        if (/[ap]\.?\s*m/i.test(t)) { raceTime = t; break; }
+      // Extract race time from "Hora:" text (actual race time, not program time)
+      const tm = pageText.match(/Hora:\s*(\d{1,2}:\d{2}\s*[ap]\.?\s*m\.?)/i);
+      if (tm) {
+        raceTime = tm[1].trim();
       }
-      // Fallback: Hora: pattern for closed races
+      // Fallback: tabular-nums span with am/pm (program time, for open races)
       if (!raceTime) {
-        const tm = pageText.match(/Hora:\s*(\d{1,2}:\d{2}\s*[ap]\.?\s*m\.?)/i);
-        if (tm) raceTime = tm[1].trim();
+        for (const ts of document.querySelectorAll('span[class*="tabular-nums"]')) {
+          const t = ts.textContent?.trim() || '';
+          if (/[ap]\.?\s*m/i.test(t)) { raceTime = t; break; }
+        }
       }
-      // Extract race date from the same info box region
+      // Extract race date from the info box region
       const raceTimeEl = [...document.querySelectorAll('span[class*="tabular-nums"]')].find(s => {
         const txt = s.textContent?.trim() || '';
         return /[ap]\.?\s*m/i.test(txt);
