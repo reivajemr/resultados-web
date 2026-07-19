@@ -272,10 +272,21 @@ app.get('/api/v1/resultados', async (req, res) => {
       races: inhData.races.map(r => ({
         number: r.raceNumber,
         time: r.raceTime,
+        track: r.track,
+        status: r.statusText,
+        date: r.raceDate || undefined,
+        exotics: r.dividends && Object.keys(r.dividends).length ? r.dividends : undefined,
         horses: (r.horses || []).map(h => ({
           number: h.programNumber || h.number,
           name: h.horseName || h.name,
-          jockey: h.jockey
+          jockey: h.jockey,
+          trainer: h.trainer || undefined,
+          weight: h.weight || undefined,
+          dividend: h.dividend || undefined,
+          position: h.position || undefined,
+          ganadorDividend: h.ganadorDividend || undefined,
+          placeDividend: h.placeDividend || undefined,
+          scratched: h.isScratched || undefined
         }))
       }))
     } : null
