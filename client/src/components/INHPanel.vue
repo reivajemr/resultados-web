@@ -6,7 +6,7 @@
 
     <template v-if="hasData">
       <div v-for="track in trackNames" :key="track" class="track-section">
-        <h3 class="track-name">{{ track }}</h3>
+        <h3 class="track-name">{{ track }} <span class="track-date">{{ trackDate(track) }}</span></h3>
 
         <!-- Resultados (carreras cerradas) -->
         <div v-if="closedRaces[track]?.length" class="subsection">
@@ -108,6 +108,11 @@ const openRaces = computed(() => {
   return map
 })
 
+function trackDate(track) {
+  const race = (props.data?.races || []).find(r => r.track === track && r.raceDate)
+  return race?.raceDate || ''
+}
+
 function sortedHorses(race) {
   if (!race.horses) return []
   return [...race.horses].sort((a, b) => {
@@ -122,7 +127,8 @@ function sortedHorses(race) {
 <style scoped>
 .empty { color: #888; font-style: italic; padding: 12px 0; }
 .track-section { margin-bottom: 24px; }
-.track-name { font-size: 1.1rem; font-weight: 700; color: #1a1a2e; margin-bottom: 12px; border-left: 4px solid #1a1a2e; padding-left: 10px; }
+.track-name { font-size: 1.1rem; font-weight: 700; color: #1a1a2e; margin-bottom: 12px; border-left: 4px solid #1a1a2e; padding-left: 10px; display: flex; align-items: center; gap: 8px; }
+.track-date { font-size: 0.75rem; font-weight: 400; color: #888; }
 .subsection { margin-bottom: 16px; }
 .subsection-title { font-size: 0.85rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; color: #666; margin-bottom: 8px; }
 .race-card { border: 1px solid #e0e0e0; border-radius: 8px; margin-bottom: 10px; overflow: hidden; }
