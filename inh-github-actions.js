@@ -474,6 +474,19 @@ async function run() {
     await login(page);
     await navigateToRaces(page);
 
+    // Log API responses to discover where race times come from
+    page.on('response', async (response) => {
+      const url = response.url();
+      if (url.includes('/api/') || url.includes('/_next/')) {
+        try {
+          const txt = await response.text();
+          if (txt.length > 20 && txt.length < 50000 && (txt.includes('hora') || txt.includes('race') || txt.includes('carrera'))) {
+            console.log('[INH API]', url.slice(0, 150), '|', txt.slice(0, 600));
+          }
+        } catch {}
+      }
+    });
+
     // ── Extract La Rinconada ──
     const lr = await extractRaces(page);
     const allRaces = [...lr.races];
