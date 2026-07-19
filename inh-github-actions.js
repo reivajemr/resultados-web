@@ -332,10 +332,6 @@ async function extractRaces(page) {
     races.push({
       raceNumber: raceNum,
       horses: raceData.horses,
-
-    races.push({
-      raceNumber: raceNum,
-      horses: raceData.horses,
       track,
       statusText: raceData.statusText,
       raceTime: raceData.raceTime,
