@@ -204,27 +204,30 @@ async function extractRaces(page) {
       let raceDate = '';
       if (upper.includes('CARRERA CERRADA')) {
         statusText = 'CERRADA';
+      }
+      // Extract race time from the info panel span (works for all races)
+      const infoBox = document.querySelector('[class*="rounded-lg"][class*="bg-muted"]') ||
+                      document.querySelector('[class*="tabular-nums"]')?.closest('[class*="rounded-lg"]');
+      if (infoBox) {
+        const tmSpan = infoBox.querySelector('[class*="tabular-nums"]');
+        if (tmSpan) {
+          const t = tmSpan.textContent?.trim();
+          if (t && /\d{1,2}:\d{2}/.test(t)) raceTime = t;
+        }
+      }
+      // Fallback: Hora: pattern for closed races
+      if (!raceTime) {
         const tm = pageText.match(/Hora:\s*(\d{1,2}:\d{2}\s*[ap]\.?\s*m\.?)/i);
         if (tm) raceTime = tm[1].trim();
       }
-      // For open races: search time near race header "C{num}" or "Resultados C{num}"
-      if (!raceTime) {
-        const raceLabels = [`Resultados C${num}`, `C${num}`];
-        for (const label of raceLabels) {
-          const idx = pageText.indexOf(label);
-          if (idx !== -1) {
-            const near = pageText.substring(idx, idx + 300);
-            const tm = near.match(/(\d{1,2}:\d{2}\s*[ap]\.?\s*m\.?)/i);
-            if (tm) { raceTime = tm[1].trim(); break; }
-          }
-        }
-      }
-      // Extract race date from text like "Domingo · 19 de julio de 2026" or "Domingo 19 de julio de 2026"
-      const dateMatch = pageText.match(/(\w+)\s*·?\s*(\d{1,2})\s+de\s+(\w+)\s+de\s+(\d{4})/i);
+      // Extract race date from info panel text
+      const infoText = infoBox?.textContent || pageText;
+      const dateMatch = infoText.match(/(\w+)\s*·?\s*(\d{1,2})\s+de\s+(\w+)\s+de\s+(\d{4})/i);
       if (dateMatch) {
         const dayNames = { 'domingo': 'Domingo', 'lunes': 'Lunes', 'martes': 'Martes', 'miércoles': 'Miércoles', 'jueves': 'Jueves', 'viernes': 'Viernes', 'sábado': 'Sábado' };
         const monthNames = { 'enero': 'Enero', 'febrero': 'Febrero', 'marzo': 'Marzo', 'abril': 'Abril', 'mayo': 'Mayo', 'junio': 'Junio', 'julio': 'Julio', 'agosto': 'Agosto', 'septiembre': 'Septiembre', 'octubre': 'Octubre', 'noviembre': 'Noviembre', 'diciembre': 'Diciembre' };
-        const day = dayNames[dateMatch[1].toLowerCase()] || dateMatch[1];
+        const dayLabel = dateMatch[1].toLowerCase();
+        const day = dayLabel === 'hoy' || dayLabel === 'mañana' ? dayLabel.charAt(0).toUpperCase() + dayLabel.slice(1) : (dayNames[dayLabel] || dateMatch[1]);
         const month = monthNames[dateMatch[3].toLowerCase()] || dateMatch[3];
         raceDate = `${day} ${dateMatch[2]} de ${month} ${dateMatch[4]}`.replace(/\s+/g, ' ');
       }
@@ -306,6 +309,7 @@ async function extractRaces(page) {
 
       // Find results section for this race: between "Resultados C{N}" and next "Resultados C" or end
       const headerIdx = pageText.indexOf(`Resultados C${num}`);
+      if (num === 4) console.log(`[C4 DEBUG] headerIdx=${headerIdx}, status=${statusText}, horses=${document.querySelectorAll('[class*="races-tab-grid"]').length} rows`);
       if (headerIdx !== -1) {
         const nextHeader = pageText.indexOf('Resultados C', headerIdx + 1);
         const sectionEnd = nextHeader !== -1 ? nextHeader : headerIdx + 3000;
