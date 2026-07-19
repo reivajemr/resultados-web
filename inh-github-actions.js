@@ -183,27 +183,30 @@ async function extractRaces(page) {
 
   console.log(`[INH] ${track}: ${raceNumbers.length} races (${raceNumbers.join(', ')})`);
 
-  // Force hydration: C1 tab might show SSR placeholder data on initial load.
-  // Click a non-first tab first so that clicking C1 later triggers real data fetch.
-  if (raceNumbers.length > 1) {
-    const second = raceNumbers[1];
-    await page.evaluate((num) => {
-      for (const btn of document.querySelectorAll('button')) {
-        if (btn.textContent?.trim() === `C${num}`) { btn.click(); return; }
-      }
-    }, second);
-    await new Promise(r => setTimeout(r, 1500));
-  }
-
   const races = [];
   for (const raceNum of raceNumbers) {
-    // Click tab
+    // React "adopts" SSR DOM for the initial tab without re-rendering.
+    // Click another tab first to force React to discard SSR content and fetch fresh data.
+    if (raceNumbers.length > 1) {
+      const otherNum = raceNum === raceNumbers[0] ? raceNumbers[1] : raceNumbers[0];
+      await page.evaluate((num) => {
+        for (const btn of document.querySelectorAll('button')) {
+          if (btn.textContent?.trim() === `C${num}`) { btn.click(); return; }
+        }
+      }, otherNum);
+      await new Promise(r => setTimeout(r, 300));
+    }
+    // Now click the target tab — React will fetch fresh data from the API
     await page.evaluate((num) => {
       for (const btn of document.querySelectorAll('button')) {
         if (btn.textContent?.trim() === `C${num}`) { btn.click(); return; }
       }
     }, raceNum);
-    await new Promise(r => setTimeout(r, 1200));
+    // Wait for API calls (race data) to complete and React to hydrate
+    try {
+      await page.waitForNetworkIdle({ idleTime: 800, timeout: 8000 });
+    } catch (_) {}
+    await new Promise(r => setTimeout(r, 500));
 
     // Extract ALL data for this race
     const raceData = await page.evaluate((num) => {
