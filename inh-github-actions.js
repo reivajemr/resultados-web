@@ -206,9 +206,11 @@ async function extractRaces(page) {
         statusText = 'CERRADA';
       }
       // Extract race time from "Hora:" text (actual race time, not program time)
-      const tm = pageText.match(/Hora:\s*(\d{1,2}:\d{2}\s*[ap]\.?\s*m\.?)/i);
-      if (tm) {
-        raceTime = tm[1].trim();
+      const horaMatch = pageText.match(/Hora:\s*(\d{1,2}:\d{2}\s*[ap]\.?\s*m\.?)/i);
+      const horaEl = document.querySelector('[class*="text-muted-foreground"]')?.textContent || '';
+      if (num === 1) console.log(`[TIME DEBUG] horaMatch=${horaMatch?.[1]}, horaEl="${horaEl}", pageText has Hora: ${pageText.includes('Hora:')}, pageText has Hora 01: ${pageText.includes('Hora: 01')}`);
+      if (horaMatch) {
+        raceTime = horaMatch[1].trim();
       }
       // Fallback: tabular-nums span with am/pm (program time, for open races)
       if (!raceTime) {
