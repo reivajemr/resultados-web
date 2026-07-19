@@ -194,6 +194,7 @@ async function extractRaces(page) {
     await new Promise(r => setTimeout(r, 1200));
 
     // Extract ALL data for this race
+    if (num === 1) console.log(`[INH DEBUG] Starting extraction for ${track} C${num}`);
     const raceData = await page.evaluate((num) => {
       // ── Status & time ──
       let statusText = 'ABIERTA';
@@ -338,8 +339,10 @@ async function extractRaces(page) {
         }
       }
 
-      return { horses, statusText, raceTime, exoticDividends };
+      return { horses, statusText, raceTime, exoticDividends, resultRows, debug: `statusBadge=${!!statusBadge}, resultsHeader=${!!resultsHeader}` };
     }, raceNum);
+
+    if (raceNum === 1) console.log(`[INH DEBUG] ${track} C${raceNum}: ${JSON.stringify({ statusText: raceData.statusText, raceTime: raceData.raceTime, horses: raceData.horses.length, posRows: raceData.resultRows?.length, exotics: Object.keys(raceData.exoticDividends || {}).length, debug: raceData.debug })}`);
 
     races.push({
       raceNumber: raceNum,
