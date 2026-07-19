@@ -214,12 +214,14 @@ async function extractRaces(page) {
       let raceTime = '';
       let raceDate = '';
 
-      // Find "CARRERA CERRADA" span to set status AND extract time
-      const allSpans = Array.from(document.querySelectorAll('span'));
-      const statusSpan = allSpans.find(el => (el.textContent || '').trim() === 'CARRERA CERRADA');
+      // Helper: check if element is visible (not display:none)
+      const isVis = (el) => el.offsetParent !== null;
+
+      // ── Closed races: find visible "CARRERA CERRADA" span ──
+      const visibleSpans = Array.from(document.querySelectorAll('span')).filter(isVis);
+      const statusSpan = visibleSpans.find(el => (el.textContent || '').trim() === 'CARRERA CERRADA');
       if (statusSpan) {
         statusText = 'CERRADA';
-        // Extract time from the parent rounded-lg container
         const parent = statusSpan.closest('[class*="rounded-lg"]');
         if (parent) {
           const txt = parent.innerText || '';
@@ -228,9 +230,9 @@ async function extractRaces(page) {
         }
       }
 
-      // Open races: find "Hoy"/"mañana" span, then get tabular-nums from its rounded-lg parent
+      // ── Open races: find visible "Hoy"/"mañana" span ──
       if (!raceTime) {
-        for (const el of allSpans) {
+        for (const el of visibleSpans) {
           const txt = (el.textContent || '').trim();
           if (txt === 'Hoy' || txt === 'Mañana') {
             const parent = el.closest('[class*="rounded-lg"]');
@@ -245,14 +247,25 @@ async function extractRaces(page) {
         }
       }
 
-      // Ultra-fallback: regex on pageText
+      // ── Debug: log actual DOM for Cnum=1 to understand wrong time source ──
+      if (num === 1 && !raceTime.includes('01:01')) {
+        const allHoraSpans = Array.from(document.querySelectorAll('span'))
+          .filter(s => /hora/i.test(s.textContent || ''));
+        for (let i = 0; i < allHoraSpans.length; i++) {
+          const s = allHoraSpans[i];
+          const p = s.closest('[class*="rounded-lg"]');
+          console.log('HORA_DEBUG C1 span#' + i + ' text="' + (s.textContent || '').trim() + '" visible=' + isVis(s) + ' parentHTML="' + (p?.innerHTML?.slice(0, 400) || 'none') + '"');
+        }
+      }
+
+      // ── Ultra-fallback: regex on pageText ──
       if (!raceTime) {
         const tm = pageText.match(/Hora:\s*(\d{1,2}:\d{2}\s*[ap]\.?\s*m\.?)/i);
         if (tm) raceTime = tm[1].trim();
       }
 
-      // Extract race date from rounded-lg info box (may not exist for closed races)
-      let infoBox = allSpans.find(el => {
+      // ── Race date ──
+      let infoBox = visibleSpans.find(el => {
         const t = (el.textContent || '').trim();
         return t === 'Hoy' || t === 'Mañana';
       })?.closest('[class*="rounded-lg"]');
