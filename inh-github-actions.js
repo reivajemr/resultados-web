@@ -207,10 +207,17 @@ async function extractRaces(page) {
         const tm = pageText.match(/Hora:\s*(\d{1,2}:\d{2}\s*[ap]\.?\s*m\.?)/i);
         if (tm) raceTime = tm[1].trim();
       }
-      // Always try to extract time (open races have it in a bold numeric span)
+      // For open races: search time near race header "C{num}" or "Resultados C{num}"
       if (!raceTime) {
-        const tm2 = pageText.match(/(\d{1,2}:\d{2}\s*[ap]\.?\s*m\.?)/i);
-        if (tm2) raceTime = tm2[1].trim();
+        const raceLabels = [`Resultados C${num}`, `C${num}`];
+        for (const label of raceLabels) {
+          const idx = pageText.indexOf(label);
+          if (idx !== -1) {
+            const near = pageText.substring(idx, idx + 300);
+            const tm = near.match(/(\d{1,2}:\d{2}\s*[ap]\.?\s*m\.?)/i);
+            if (tm) { raceTime = tm[1].trim(); break; }
+          }
+        }
       }
       // Extract race date from text like "Domingo · 19 de julio de 2026" or "Domingo 19 de julio de 2026"
       const dateMatch = pageText.match(/(\w+)\s*·?\s*(\d{1,2})\s+de\s+(\w+)\s+de\s+(\d{4})/i);
