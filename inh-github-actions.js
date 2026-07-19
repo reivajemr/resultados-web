@@ -205,22 +205,23 @@ async function extractRaces(page) {
       if (upper.includes('CARRERA CERRADA')) {
         statusText = 'CERRADA';
       }
-      // Extract race time from the info panel span (works for all races)
-      const infoBox = document.querySelector('[class*="rounded-lg"][class*="bg-muted"]') ||
-                      document.querySelector('[class*="tabular-nums"]')?.closest('[class*="rounded-lg"]');
-      if (infoBox) {
-        const tmSpan = infoBox.querySelector('[class*="tabular-nums"]');
-        if (tmSpan) {
-          const t = tmSpan.textContent?.trim();
-          if (t && /\d{1,2}:\d{2}/.test(t)) raceTime = t;
-        }
+      // Extract race time from the info box span (has am/pm format)
+      // Tab button spans also have tabular-nums but only show "HH:MM" without am/pm
+      for (const ts of document.querySelectorAll('span[class*="tabular-nums"]')) {
+        const t = ts.textContent?.trim() || '';
+        if (/[ap]\.?\s*m/i.test(t)) { raceTime = t; break; }
       }
       // Fallback: Hora: pattern for closed races
       if (!raceTime) {
         const tm = pageText.match(/Hora:\s*(\d{1,2}:\d{2}\s*[ap]\.?\s*m\.?)/i);
         if (tm) raceTime = tm[1].trim();
       }
-      // Extract race date from info panel text
+      // Extract race date from the same info box region
+      const raceTimeEl = [...document.querySelectorAll('span[class*="tabular-nums"]')].find(s => {
+        const txt = s.textContent?.trim() || '';
+        return /[ap]\.?\s*m/i.test(txt);
+      });
+      const infoBox = raceTimeEl?.closest('[class*="rounded-lg"]');
       const infoText = infoBox?.textContent || pageText;
       const dateMatch = infoText.match(/(\w+)\s*·?\s*(\d{1,2})\s+de\s+(\w+)\s+de\s+(\d{4})/i);
       if (dateMatch) {
