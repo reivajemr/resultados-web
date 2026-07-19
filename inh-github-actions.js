@@ -9,6 +9,24 @@ const API_KEY = process.env.RENDER_API_KEY;
 const INH_USER = process.env.INH_USER;
 const INH_PASS = process.env.INH_PASS;
 
+// The SSR page renders all times 4 hours behind (timezone bug in Next.js).
+// Add 4 hours to correct them.
+function fixTime(timeStr) {
+  if (!timeStr) return '';
+  const m = timeStr.match(/(\d{1,2}):(\d{2})\s*([ap])\.?\s*m/i);
+  if (!m) return timeStr;
+  let h = parseInt(m[1]);
+  const min = m[2];
+  const mer = m[3].toLowerCase();
+  if (mer === 'p' && h !== 12) h += 12;
+  if (mer === 'a' && h === 12) h = 0;
+  h = (h + 4) % 24;
+  const newMer = h >= 12 ? 'p. m.' : 'a. m.';
+  if (h > 12) h -= 12;
+  if (h === 0) h = 12;
+  return `${h.toString().padStart(2, '0')}:${min} ${newMer}`;
+}
+
 async function login(page) {
   await page.goto('https://apuestas.inh.gob.ve', { waitUntil: 'domcontentloaded', timeout: 60000 });
   await new Promise(r => setTimeout(r, 3000));
@@ -430,6 +448,9 @@ async function extractRaces(page) {
           if (result.place) horse.placeDividend = result.place;
         }
       }
+
+      // SSR renders all times 4 hours behind (Next.js timezone bug)
+      if (raceTime) raceTime = fixTime(raceTime);
 
       return { horses, statusText, raceTime, raceDate, exoticDividends };
     }, raceNum);
