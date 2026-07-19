@@ -449,11 +449,11 @@ async function extractRaces(page) {
         }
       }
 
-      // SSR renders all times 4 hours behind (Next.js timezone bug)
-      if (raceTime) raceTime = fixTime(raceTime);
-
       return { horses, statusText, raceTime, raceDate, exoticDividends };
     }, raceNum);
+
+    // SSR renders all times 4 hours behind (Next.js timezone bug)
+    if (raceData.raceTime) raceData.raceTime = fixTime(raceData.raceTime);
 
     if (raceNum === 1) console.log(`[INH DEBUG] ${track} C${raceNum}: status="${raceData.statusText}" time="${raceData.raceTime}" date="${raceData.raceDate}" horses=${raceData.horses.length}`);
 
