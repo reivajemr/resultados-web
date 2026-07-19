@@ -205,26 +205,29 @@ async function extractRaces(page) {
       if (upper.includes('CARRERA CERRADA')) {
         statusText = 'CERRADA';
       }
-      // Extract race time from "Hora:" text (actual race time, not program time)
-      const horaMatch = pageText.match(/Hora:\s*(\d{1,2}:\d{2}\s*[ap]\.?\s*m\.?)/i);
-      const horaEl = document.querySelector('[class*="text-muted-foreground"]')?.textContent || '';
-      if (num === 1) console.log(`[TIME DEBUG] horaMatch=${horaMatch?.[1]}, horaEl="${horaEl}", pageText has Hora: ${pageText.includes('Hora:')}, pageText has Hora 01: ${pageText.includes('Hora: 01')}`);
-      if (horaMatch) {
-        raceTime = horaMatch[1].trim();
-      }
-      // Fallback: tabular-nums span with am/pm (program time, for open races)
-      if (!raceTime) {
-        for (const ts of document.querySelectorAll('span[class*="tabular-nums"]')) {
-          const t = ts.textContent?.trim() || '';
-          if (/[ap]\.?\s*m/i.test(t)) { raceTime = t; break; }
+      // Find the info box: a container with both "Hoy" and a time with am/pm
+      const allEls = document.querySelectorAll('[class*="rounded-lg"]');
+      let infoBox = null;
+      for (const el of allEls) {
+        const txt = el.textContent || '';
+        if (/(hoy|mañana)/i.test(txt) && /\d{1,2}:\d{2}\s*[ap]\.?\s*m/i.test(txt)) {
+          infoBox = el; break;
         }
       }
-      // Extract race date from the info box region
-      const raceTimeEl = [...document.querySelectorAll('span[class*="tabular-nums"]')].find(s => {
-        const txt = s.textContent?.trim() || '';
-        return /[ap]\.?\s*m/i.test(txt);
-      });
-      const infoBox = raceTimeEl?.closest('[class*="rounded-lg"]');
+      // Extract race time from the info box
+      if (infoBox) {
+        const ts = infoBox.querySelector('[class*="tabular-nums"]');
+        if (ts) {
+          const t = ts.textContent?.trim() || '';
+          if (/[ap]\.?\s*m/i.test(t)) raceTime = t;
+        }
+      }
+      // Fallback: Hora: pattern
+      if (!raceTime) {
+        const tm = pageText.match(/Hora:\s*(\d{1,2}:\d{2}\s*[ap]\.?\s*m\.?)/i);
+        if (tm) raceTime = tm[1].trim();
+      }
+      // Extract race date from info box
       const infoText = infoBox?.textContent || pageText;
       const dateMatch = infoText.match(/(\w+)\s*·?\s*(\d{1,2})\s+de\s+(\w+)\s+de\s+(\d{4})/i);
       if (dateMatch) {
