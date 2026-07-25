@@ -10,7 +10,7 @@ import {
 const VET_OFFSET = -4 * 60 * 60 * 1000;
 const DRAW_DELAY_MS = 5 * 60 * 1000;
 const RETRY_INTERVAL_MS = 5 * 60 * 1000;
-const MAX_RETRIES = 3;
+const MAX_RETRIES = 15;
 
 const GAMES = [
   {
@@ -136,15 +136,21 @@ class AnimalitosScheduler {
           results = await fetchGuacharitoFallback(this.loteriaEmail, this.loteriaPassword, dateCompact);
         }
         break;
-      case 'lagranjita':
-        results = await fetchLaGranjitaFallback(this.loteriaEmail, this.loteriaPassword, dateCompact);
-        if (!results?.length) {
-          console.log(`[${game.id}] Fallback LoteriaDeHoy sin datos, usando lagranjita.com`);
-          results = await fetchLaGranjitaFromAPI(today);
-        } else {
-          console.log(`[${game.id}] OK: ${results.length} resultados desde LoteriaDeHoy`);
+      case 'lagranjita': {
+        const [fallback, api] = await Promise.all([
+          fetchLaGranjitaFallback(this.loteriaEmail, this.loteriaPassword, dateCompact),
+          fetchLaGranjitaFromAPI(today)
+        ]);
+        // Merge: prefer API (lagranjita.com) results, fill gaps with fallback (LoteriaDeHoy)
+        const map = {};
+        for (const r of [...(api || []), ...(fallback || [])]) {
+          const key = r.result_time;
+          if (key && !map[key]) map[key] = r;
         }
+        results = Object.values(map);
+        console.log(`[${game.id}] ${api?.length || 0} de API, ${fallback?.length || 0} de fallback, ${results.length} únicos`);
         break;
+      }
       default:
         return null;
     }

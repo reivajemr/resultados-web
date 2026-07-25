@@ -20,6 +20,11 @@ const API_KEY = process.env.API_KEY;
 
 const db = process.env.DATABASE_URL ? dbModule : null;
 
+const VET_OFFSET = -4 * 3600000;
+function vetToday() {
+  return new Date(Date.now() + VET_OFFSET).toISOString().split('T')[0];
+}
+
 const animalitos = new AnimalitosScheduler({
   loteriaEmail: process.env.LOTERIA_EMAIL,
   loteriaPassword: process.env.LOTERIA_PASSWORD,
@@ -101,8 +106,7 @@ app.post('/api/inh/data', (req, res) => {
 
   // Persist to DB
   if (db) {
-    const today = new Date().toISOString().split('T')[0];
-    db.guardarProgramaINH(today, inhData).catch(e =>
+    db.guardarProgramaINH(vetToday(), inhData).catch(e =>
       console.error('[INH] Error guardando en DB:', e.message)
     );
   }
@@ -318,8 +322,7 @@ app.listen(PORT, () => {
     console.log('[DB] Persistencia activa');
 
     // Load INH data from DB for today
-    const today = new Date().toISOString().split('T')[0];
-    const saved = await db.cargarProgramaINH(today);
+    const saved = await db.cargarProgramaINH(vetToday());
     if (saved) {
       inhData = {
         program: Array.isArray(saved.program) ? saved.program : [],
