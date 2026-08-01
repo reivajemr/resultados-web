@@ -121,13 +121,23 @@ app.post('/api/inh/data', (req, res) => {
   }
   const { program, races, isRunning, fecha } = req.body || {};
   const normRaces = normalizeRaces(races);
+  // In-memory (live "today" view) only keeps today's races; past/future
+  // jornadas are persisted to the DB under their own fecha.
+  const today = vetToday();
+  const todayRaces = normRaces.filter(r => (r.fecha || fecha || today) === today);
   inhData = {
-    program: Array.isArray(program) ? program : inhData.program,
-    races: normRaces,
+    program: todayRaces.map(r => ({
+      raceNumber: r.raceNumber,
+      track: r.track,
+      raceTime: r.raceTime || '',
+      raceDate: r.raceDate || '',
+      statusText: r.statusText || 'ABIERTA'
+    })),
+    races: todayRaces,
     isRunning: typeof isRunning === 'boolean' ? isRunning : inhData.isRunning,
     lastPoll: new Date().toISOString()
   };
-  console.log('[INH] Datos recibidos:', inhData.program.length, 'carreras,', inhData.races.length, 'actualizaciones');
+  console.log('[INH] Datos recibidos:', inhData.program.length, 'carreras de hoy,', normRaces.length, 'totales');
 
   // Persist to DB, one row per canonical race date
   if (db && normRaces.length) {

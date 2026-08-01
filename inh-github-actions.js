@@ -32,6 +32,15 @@ const MONTHS = {
   julio: 7, agosto: 8, septiembre: 9, octubre: 10, noviembre: 11, diciembre: 12
 };
 
+const MONTH_NAMES = {
+  1: 'Enero', 2: 'Febrero', 3: 'Marzo', 4: 'Abril', 5: 'Mayo', 6: 'Junio',
+  7: 'Julio', 8: 'Agosto', 9: 'Septiembre', 10: 'Octubre', 11: 'Noviembre', 12: 'Diciembre'
+};
+
+const DAY_NAMES = {
+  0: 'Domingo', 1: 'Lunes', 2: 'Martes', 3: 'Miércoles', 4: 'Jueves', 5: 'Viernes', 6: 'Sábado'
+};
+
 // Current Venezuela date (UTC-4) as YYYY-MM-DD, optionally offset by days.
 function vetDateStr(offsetDays = 0) {
   const d = new Date(Date.now() - 4 * 3600000);
@@ -39,21 +48,32 @@ function vetDateStr(offsetDays = 0) {
   return d.toISOString().split('T')[0];
 }
 
-// Parse the info-box text ("Hoy · 2 de agosto de 2026", "Mañana · ...",
-// "Domingo · 2 de agosto de 2026") into a canonical YYYY-MM-DD.
+// Parse the header text of an OPEN race ("Hoy · 2 de agosto de 2026",
+// "Mañana · ...", "Domingo · 2 de agosto de 2026") into a canonical
+// YYYY-MM-DD. The literal date always wins; "Hoy"/"Mañana" are only a
+// fallback when no literal date is present.
 function parseTrackFecha(infoText) {
   if (!infoText) return null;
-  const m = infoText.match(/(\w+)\s*·?\s*(\d{1,2})\s+de\s+(\w+)\s+de\s+(\d{4})/i);
-  if (!m) return null;
-  const dayLabel = m[1].toLowerCase();
-  if (dayLabel === 'hoy') return vetDateStr(0);
-  if (dayLabel === 'mañana' || dayLabel === 'manana') return vetDateStr(1);
-  const month = MONTHS[m[3].toLowerCase()];
-  if (!month) return null;
-  const day = parseInt(m[2]);
-  const year = parseInt(m[4]);
-  if (!day || !year) return null;
-  return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+  const dm = infoText.match(/(\d{1,2})\s+de\s+(\w+)\s+de\s+(\d{4})/i);
+  if (dm) {
+    const month = MONTHS[dm[2].toLowerCase()];
+    const day = parseInt(dm[1]);
+    const year = parseInt(dm[3]);
+    if (month && day && year) {
+      return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    }
+  }
+  if (/(^|\s)hoy(\s|$)/i.test(infoText)) return vetDateStr(0);
+  if (/(^|\s)(mañana|manana)(\s|$)/i.test(infoText)) return vetDateStr(1);
+  return null;
+}
+
+// "2026-08-02" -> "Domingo 2 de agosto de 2026"
+function formatRaceDate(fecha) {
+  if (!fecha) return '';
+  const [y, m, d] = fecha.split('-').map(Number);
+  const wd = DAY_NAMES[new Date(Date.UTC(y, m - 1, d)).getUTCDay()];
+  return `${wd} ${d} de ${MONTH_NAMES[m]} ${y}`;
 }
 
 async function login(page) {
@@ -218,22 +238,6 @@ async function extractRaces(page) {
     return 'La Rinconada';
   });
 
-  // Extract canonical race date once per hipódromo from the info box
-  const trackFecha = await page.evaluate(() => {
-    const isVis = (el) => el.offsetParent !== null;
-    const visibleSpans = Array.from(document.querySelectorAll('span')).filter(isVis);
-    const infoBox = visibleSpans.find(el => {
-      const t = (el.textContent || '').trim();
-      return t === 'Hoy' || t === 'Mañana';
-    })?.closest('[class*="rounded-lg"]');
-    return infoBox?.innerText || document.body.innerText;
-  }).then(parseTrackFecha);
-  if (!trackFecha) {
-    console.warn(`[INH] ${track}: no se pudo parsear la fecha, usando hoy`);
-  }
-  const fecha = trackFecha || vetDateStr(0);
-  console.log(`[INH] ${track}: fecha=${fecha}`);
-
   // Get race numbers from tabs
   const raceNumbers = await page.evaluate(() => {
     const nums = [];
@@ -279,6 +283,7 @@ async function extractRaces(page) {
       let statusText = 'ABIERTA';
       let raceTime = '';
       let raceDate = '';
+      let raceHeaderText = '';
 
       // Helper: check if element is visible (not display:none)
       const isVis = (el) => el.offsetParent !== null;
@@ -296,31 +301,24 @@ async function extractRaces(page) {
         }
       }
 
-      // ── Open races: find visible "Hoy"/"mañana" span ──
-      if (!raceTime) {
-        for (const el of visibleSpans) {
-          const txt = (el.textContent || '').trim();
-          if (txt === 'Hoy' || txt === 'Mañana') {
-            const parent = el.closest('[class*="rounded-lg"]');
-            if (parent) {
-              const ts = parent.querySelector('[class*="tabular-nums"]');
-              if (ts) {
-                const t = ts.textContent?.trim() || '';
-                if (/[ap]\.?\s*m/i.test(t)) { raceTime = t; break; }
-              }
-            }
+      // ── Open races: header box carries the date
+      //    ("Domingo · 2 de agosto de 2026" / "Hoy · ...") + time ──
+      if (statusText === 'ABIERTA') {
+        const dateSpan = visibleSpans.find(el =>
+          /·?\s*\d{1,2}\s+de\s+\w+\s+de\s+\d{4}/i.test((el.textContent || '').trim())
+        );
+        const labelSpan = !dateSpan && visibleSpans.find(el => {
+          const t = (el.textContent || '').trim();
+          return t === 'Hoy' || t === 'Mañana';
+        });
+        const box = (dateSpan || labelSpan)?.closest('[class*="rounded-lg"]');
+        if (box) {
+          raceHeaderText = box.innerText || '';
+          const ts = box.querySelector('[class*="tabular-nums"]');
+          if (ts) {
+            const t = ts.textContent?.trim() || '';
+            if (/[ap]\.?\s*m/i.test(t)) raceTime = t;
           }
-        }
-      }
-
-      // ── Debug: log actual DOM for Cnum=1 to understand wrong time source ──
-      if (num === 1 && !raceTime.includes('01:01')) {
-        const allHoraSpans = Array.from(document.querySelectorAll('span'))
-          .filter(s => /hora/i.test(s.textContent || ''));
-        for (let i = 0; i < allHoraSpans.length; i++) {
-          const s = allHoraSpans[i];
-          const p = s.closest('[class*="rounded-lg"]');
-          console.log('HORA_DEBUG C1 span#' + i + ' text="' + (s.textContent || '').trim() + '" visible=' + isVis(s) + ' parentHTML="' + (p?.innerHTML?.slice(0, 400) || 'none') + '"');
         }
       }
 
@@ -328,22 +326,6 @@ async function extractRaces(page) {
       if (!raceTime) {
         const tm = pageText.match(/Hora:\s*(\d{1,2}:\d{2}\s*[ap]\.?\s*m\.?)/i);
         if (tm) raceTime = tm[1].trim();
-      }
-
-      // ── Race date ──
-      let infoBox = visibleSpans.find(el => {
-        const t = (el.textContent || '').trim();
-        return t === 'Hoy' || t === 'Mañana';
-      })?.closest('[class*="rounded-lg"]');
-      const infoText = infoBox?.innerText || pageText;
-      const dateMatch = infoText.match(/(\w+)\s*·?\s*(\d{1,2})\s+de\s+(\w+)\s+de\s+(\d{4})/i);
-      if (dateMatch) {
-        const dayNames = { 'domingo': 'Domingo', 'lunes': 'Lunes', 'martes': 'Martes', 'miércoles': 'Miércoles', 'jueves': 'Jueves', 'viernes': 'Viernes', 'sábado': 'Sábado' };
-        const monthNames = { 'enero': 'Enero', 'febrero': 'Febrero', 'marzo': 'Marzo', 'abril': 'Abril', 'mayo': 'Mayo', 'junio': 'Junio', 'julio': 'Julio', 'agosto': 'Agosto', 'septiembre': 'Septiembre', 'octubre': 'Octubre', 'noviembre': 'Noviembre', 'diciembre': 'Diciembre' };
-        const dayLabel = dateMatch[1].toLowerCase();
-        const day = dayLabel === 'hoy' || dayLabel === 'mañana' ? dayLabel.charAt(0).toUpperCase() + dayLabel.slice(1) : (dayNames[dayLabel] || dateMatch[1]);
-        const month = monthNames[dateMatch[3].toLowerCase()] || dateMatch[3];
-        raceDate = `${day} ${dateMatch[2]} de ${month} ${dateMatch[4]}`.replace(/\s+/g, ' ');
       }
 
       // ── Horses from race grid ──
@@ -494,13 +476,14 @@ async function extractRaces(page) {
         }
       }
 
-      return { horses, statusText, raceTime, raceDate, exoticDividends };
+      return { horses, statusText, raceTime, raceDate, raceHeaderText, exoticDividends };
     }, raceNum);
 
     // SSR renders all times 4 hours behind (Next.js timezone bug)
     if (raceData.raceTime) raceData.raceTime = fixTime(raceData.raceTime);
+    const raceFecha = parseTrackFecha(raceData.raceHeaderText) || '';
 
-    if (raceNum === 1) console.log(`[INH DEBUG] ${track} C${raceNum}: status="${raceData.statusText}" time="${raceData.raceTime}" date="${raceData.raceDate}" horses=${raceData.horses.length}`);
+    if (raceNum === 1) console.log(`[INH DEBUG] ${track} C${raceNum}: status="${raceData.statusText}" time="${raceData.raceTime}" fecha="${raceFecha}" horses=${raceData.horses.length}`);
 
     races.push({
       raceNumber: raceNum,
@@ -508,8 +491,8 @@ async function extractRaces(page) {
       track,
       statusText: raceData.statusText,
       raceTime: raceData.raceTime,
-      raceDate: raceData.raceDate || '',
-      fecha,
+      raceDate: raceFecha ? formatRaceDate(raceFecha) : '',
+      fecha: raceFecha,
       dividends: raceData.exoticDividends || {}
     });
     if (raceNum % 3 === 0 || raceNum === raceNumbers[raceNumbers.length - 1]) {
@@ -517,7 +500,15 @@ async function extractRaces(page) {
     }
   }
 
-  return { track, races, raceNumbers, fecha };
+  // Track-level date: taken from any open race (closed races have no header).
+  // Closed races inherit it.
+  const trackFecha = races.find(r => r.fecha)?.fecha || '';
+  for (const r of races) {
+    if (!r.fecha) r.fecha = trackFecha;
+    if (!r.raceDate && trackFecha) r.raceDate = formatRaceDate(trackFecha);
+  }
+  console.log(`[INH] ${track}: ${races.length} races, fecha=${trackFecha || '(sin fecha, todo cerrado)'}`);
+  return { track, races, raceNumbers, fecha: trackFecha };
 }
 
 async function run() {
@@ -556,30 +547,42 @@ async function run() {
 
     // ── Extract La Rinconada ──
     const lr = await extractRaces(page);
-    const allRaces = [...lr.races];
 
-    // ── Switch to Valencia and extract ──
+    // ── Switch to Valencia (or Santa Rita) and extract ──
     console.log('[INH] Switching to Valencia...');
     const switched = await switchTrack(page, 'Valencia');
+    let val = null, santa = null;
     if (switched) {
-      const val = await extractRaces(page);
-      allRaces.push(...val.races);
+      val = await extractRaces(page);
     } else {
       console.log('[INH] Valencia not available, trying Santa Rita...');
       const switched2 = await switchTrack(page, 'Santa Rita');
-      if (switched2) {
-        const santa = await extractRaces(page);
-        allRaces.push(...santa.races);
+      if (switched2) santa = await extractRaces(page);
+    }
+
+    // ── Keep only today/future jornadas; skip stale or closed-only cards ──
+    const todayStr = vetDateStr(0);
+    const allRaces = [];
+    for (const t of [lr, val, santa]) {
+      if (!t) continue;
+      if (!t.fecha) {
+        console.log(`[INH] ${t.track}: omitida, sin fecha (todo cerrado / jornada vieja)`);
+        continue;
       }
+      if (t.fecha < todayStr) {
+        console.log(`[INH] ${t.track}: omitida jornada pasada (${t.fecha})`);
+        continue;
+      }
+      allRaces.push(...t.races);
     }
 
     // ── Group by canonical date & send one payload per jornada ──
     if (allRaces.length === 0) {
-      console.warn('[INH] Sin carreras en ningún hipódromo; no se envía nada para no sobrescribir');
+      console.warn('[INH] Sin jornadas actuales; no se envía nada para no sobrescribir');
     } else {
       const byFecha = {};
       for (const r of allRaces) {
-        const d = r.fecha || vetDateStr(0);
+        const d = r.fecha || todayStr;
         if (!byFecha[d]) byFecha[d] = [];
         byFecha[d].push(r);
       }
