@@ -1,8 +1,31 @@
 import pg from 'pg';
 
-const pool = new pg.Pool({
-  connectionString: process.env.DATABASE_URL,
-  ssl: process.env.DATABASE_URL?.includes('localhost') ? false : { rejectUnauthorized: false }
+const ssl = { rejectUnauthorized: false };
+
+function makePool() {
+  const raw = process.env.DATABASE_URL;
+  if (raw) {
+    try {
+      const u = new URL(raw);
+      console.log(`[DB] Conectando a host=${u.hostname} port=${u.port || '5432'} user=${u.username || '?'} db=${(u.pathname || '/postgres').slice(1)}`);
+    } catch (e) {
+      console.error('[DB] DATABASE_URL no es una URL válida:', e.message);
+    }
+    return new pg.Pool({
+      connectionString: raw,
+      ssl: raw.includes('localhost') ? false : ssl
+    });
+  }
+  // Fallback: variables individuales (evita problemas con caracteres especiales en el password)
+  // pg lee nativamente PGHOST, PGPORT, PGUSER, PGPASSWORD, PGDATABASE
+  console.log(`[DB] Usando env vars individuales (PGHOST=${process.env.PGHOST || 'no definido'})`);
+  return new pg.Pool({ ssl });
+}
+
+const pool = makePool();
+
+pool.on('error', (err) => {
+  console.error('[DB] Error en pool:', err.message);
 });
 
 export async function initDB() {
