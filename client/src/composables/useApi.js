@@ -16,7 +16,10 @@ export function useApi() {
 
   async function fetchINH() {
     try {
-      const res = await fetch('/api/inh')
+      const url = selectedDate.value === vetTodayStr()
+        ? '/api/inh'
+        : `/api/inh?fecha=${selectedDate.value}`
+      const res = await fetch(url)
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       inh.value = await res.json()
     } catch (e) {
@@ -66,8 +69,6 @@ export function useApi() {
   function nextDay() {
     const d = new Date(selectedDate.value)
     d.setDate(d.getDate() + 1)
-    const today = vetTodayStr()
-    if (d.toISOString().split('T')[0] > today) return
     goToDate(d.toISOString().split('T')[0])
   }
 

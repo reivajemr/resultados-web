@@ -4,6 +4,11 @@ on:
   schedule:
     - cron: '*/10 12-23 * * *'
   workflow_dispatch:
+    inputs:
+      clear_inh_programa:
+        description: 'Borrar todos los programas INH en DB antes de scrapear'
+        type: boolean
+        default: false
 
 jobs:
   scrape:
@@ -13,6 +18,9 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+      - name: Clear INH programa (opcional)
+        if: github.event_name == 'workflow_dispatch' && inputs.clear_inh_programa
+        run: curl -s -X POST "https://resultados-web.onrender.com/api/inh/clear" -H "x-api-key: ${{ secrets.RENDER_API_KEY }}"
       - name: Install dependencies
         run: npm install puppeteer axios puppeteer-extra puppeteer-extra-plugin-stealth
       - name: Run scraper

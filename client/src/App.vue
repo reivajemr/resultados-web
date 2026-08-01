@@ -9,7 +9,15 @@
     </header>
 
     <section class="section">
-      <h2>Carreras de Caballos (INH)</h2>
+      <div class="animalitos-header">
+        <h2>Carreras de Caballos (INH)</h2>
+        <div class="date-nav">
+          <button class="btn-nav" @click="prevDay(); refresh()" :disabled="loading">&larr;</button>
+          <input type="date" class="date-input" :value="selectedDate" @change="onDateInput" />
+          <button class="btn-nav" @click="nextDay(); refresh()" :disabled="loading">&rarr;</button>
+          <button v-if="isHistorical" class="btn-today" @click="goToday(); refresh()">Hoy</button>
+        </div>
+      </div>
       <INHPanel :data="inh" />
     </section>
 
@@ -62,6 +70,14 @@ async function fetchDate() {
     console.error('Error fetching date:', e.message)
   } finally {
     fetching.value = false
+  }
+}
+
+function onDateInput(event) {
+  const value = event.target.value
+  if (value) {
+    goToDate(value)
+    refresh()
   }
 }
 

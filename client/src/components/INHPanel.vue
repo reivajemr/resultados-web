@@ -1,7 +1,7 @@
 <template>
   <div class="inh-panel">
     <div v-if="!hasData" class="empty">
-      {{ data?.lastPoll ? 'No hay carreras hoy' : 'Consultando programación...' }}
+      {{ data?.fecha ? `No hay programación para ${data.fecha}` : (data?.lastPoll ? 'No hay carreras hoy' : 'Consultando programación...') }}
     </div>
 
     <template v-if="hasData">

@@ -135,6 +135,16 @@ export async function cargarProgramaINH(fecha) {
   }
 }
 
+export async function vaciarProgramaINH() {
+  const client = await mustPool().connect();
+  try {
+    const { rowCount } = await client.query(`DELETE FROM inh_programa`);
+    return rowCount || 0;
+  } finally {
+    client.release();
+  }
+}
+
 export async function initAllTables() {
   const client = await mustPool().connect();
   try {

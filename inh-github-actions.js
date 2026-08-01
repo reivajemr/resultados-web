@@ -27,6 +27,35 @@ function fixTime(timeStr) {
   return `${h.toString().padStart(2, '0')}:${min} ${newMer}`;
 }
 
+const MONTHS = {
+  enero: 1, febrero: 2, marzo: 3, abril: 4, mayo: 5, junio: 6,
+  julio: 7, agosto: 8, septiembre: 9, octubre: 10, noviembre: 11, diciembre: 12
+};
+
+// Current Venezuela date (UTC-4) as YYYY-MM-DD, optionally offset by days.
+function vetDateStr(offsetDays = 0) {
+  const d = new Date(Date.now() - 4 * 3600000);
+  d.setUTCDate(d.getUTCDate() + offsetDays);
+  return d.toISOString().split('T')[0];
+}
+
+// Parse the info-box text ("Hoy · 2 de agosto de 2026", "Mañana · ...",
+// "Domingo · 2 de agosto de 2026") into a canonical YYYY-MM-DD.
+function parseTrackFecha(infoText) {
+  if (!infoText) return null;
+  const m = infoText.match(/(\w+)\s*·?\s*(\d{1,2})\s+de\s+(\w+)\s+de\s+(\d{4})/i);
+  if (!m) return null;
+  const dayLabel = m[1].toLowerCase();
+  if (dayLabel === 'hoy') return vetDateStr(0);
+  if (dayLabel === 'mañana' || dayLabel === 'manana') return vetDateStr(1);
+  const month = MONTHS[m[3].toLowerCase()];
+  if (!month) return null;
+  const day = parseInt(m[2]);
+  const year = parseInt(m[4]);
+  if (!day || !year) return null;
+  return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+}
+
 async function login(page) {
   await page.goto('https://apuestas.inh.gob.ve', { waitUntil: 'domcontentloaded', timeout: 60000 });
   await new Promise(r => setTimeout(r, 3000));
@@ -188,6 +217,22 @@ async function extractRaces(page) {
     if (u.includes('SANTA RITA')) return 'Santa Rita';
     return 'La Rinconada';
   });
+
+  // Extract canonical race date once per hipódromo from the info box
+  const trackFecha = await page.evaluate(() => {
+    const isVis = (el) => el.offsetParent !== null;
+    const visibleSpans = Array.from(document.querySelectorAll('span')).filter(isVis);
+    const infoBox = visibleSpans.find(el => {
+      const t = (el.textContent || '').trim();
+      return t === 'Hoy' || t === 'Mañana';
+    })?.closest('[class*="rounded-lg"]');
+    return infoBox?.innerText || document.body.innerText;
+  }).then(parseTrackFecha);
+  if (!trackFecha) {
+    console.warn(`[INH] ${track}: no se pudo parsear la fecha, usando hoy`);
+  }
+  const fecha = trackFecha || vetDateStr(0);
+  console.log(`[INH] ${track}: fecha=${fecha}`);
 
   // Get race numbers from tabs
   const raceNumbers = await page.evaluate(() => {
@@ -464,6 +509,7 @@ async function extractRaces(page) {
       statusText: raceData.statusText,
       raceTime: raceData.raceTime,
       raceDate: raceData.raceDate || '',
+      fecha,
       dividends: raceData.exoticDividends || {}
     });
     if (raceNum % 3 === 0 || raceNum === raceNumbers[raceNumbers.length - 1]) {
@@ -471,7 +517,7 @@ async function extractRaces(page) {
     }
   }
 
-  return { track, races, raceNumbers };
+  return { track, races, raceNumbers, fecha };
 }
 
 async function run() {
@@ -527,24 +573,35 @@ async function run() {
       }
     }
 
-    // ── Build & send payload ──
-    const program = allRaces.map(r => ({
-      raceNumber: r.raceNumber,
-      track: r.track,
-      raceTime: r.raceTime || '',
-      raceDate: r.raceDate || '',
-      statusText: r.statusText || 'ABIERTA'
-    }));
-
-    const payload = { program, races: allRaces, isRunning: true };
-    const totalHorses = allRaces.reduce((s, r) => s + r.horses.length, 0);
-    console.log(`[INH] Sending ${allRaces.length} races, ${totalHorses} horses (${[...new Set(allRaces.map(r => r.track))].join(', ')})`);
-
-    if (!API_KEY) throw new Error('Falta RENDER_API_KEY');
-    await axios.post(`${RENDER_URL}/api/inh/data`, payload, {
-      headers: { 'Content-Type': 'application/json', 'x-api-key': API_KEY }
-    });
-    console.log('[INH] Data sent OK');
+    // ── Group by canonical date & send one payload per jornada ──
+    if (allRaces.length === 0) {
+      console.warn('[INH] Sin carreras en ningún hipódromo; no se envía nada para no sobrescribir');
+    } else {
+      const byFecha = {};
+      for (const r of allRaces) {
+        const d = r.fecha || vetDateStr(0);
+        if (!byFecha[d]) byFecha[d] = [];
+        byFecha[d].push(r);
+      }
+      if (!API_KEY) throw new Error('Falta RENDER_API_KEY');
+      for (const [fecha, races] of Object.entries(byFecha)) {
+        const program = races.map(r => ({
+          raceNumber: r.raceNumber,
+          track: r.track,
+          raceTime: r.raceTime || '',
+          raceDate: r.raceDate || '',
+          statusText: r.statusText || 'ABIERTA',
+          fecha
+        }));
+        const payload = { fecha, program, races, isRunning: true };
+        const totalHorses = races.reduce((s, r) => s + r.horses.length, 0);
+        console.log(`[INH] Sending ${races.length} races for ${fecha}, ${totalHorses} horses (${[...new Set(races.map(r => r.track))].join(', ')})`);
+        await axios.post(`${RENDER_URL}/api/inh/data`, payload, {
+          headers: { 'Content-Type': 'application/json', 'x-api-key': API_KEY }
+        });
+      }
+      console.log('[INH] Data sent OK');
+    }
 
   } finally {
     await browser.close();

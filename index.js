@@ -82,7 +82,30 @@ function normalizeRaces(races) {
   }));
 }
 
-app.get('/api/inh', (req, res) => {
+app.get('/api/inh', async (req, res) => {
+  const fecha = req.query.fecha;
+  if (fecha) {
+    if (!db) return res.status(503).json({ error: 'Base de datos no disponible' });
+    try {
+      const saved = await db.cargarProgramaINH(fecha);
+      if (!saved) {
+        return res.json({
+          timestamp: new Date().toISOString(),
+          program: [], races: [], isRunning: false, lastPoll: null, fecha
+        });
+      }
+      return res.json({
+        timestamp: new Date().toISOString(),
+        program: Array.isArray(saved.program) ? saved.program : [],
+        races: normalizeRaces(saved.races),
+        isRunning: saved.isRunning || false,
+        lastPoll: saved.lastPoll || null,
+        fecha
+      });
+    } catch (err) {
+      return res.status(500).json({ error: err.message });
+    }
+  }
   res.json({
     timestamp: new Date().toISOString(),
     program: Array.isArray(inhData?.program) ? inhData.program : [],
@@ -96,23 +119,53 @@ app.post('/api/inh/data', (req, res) => {
   if (req.headers['x-api-key'] !== process.env.API_KEY) {
     return res.status(401).json({ error: 'No autorizado' });
   }
-  const { program, races, isRunning } = req.body || {};
+  const { program, races, isRunning, fecha } = req.body || {};
+  const normRaces = normalizeRaces(races);
   inhData = {
     program: Array.isArray(program) ? program : inhData.program,
-    races: normalizeRaces(races),
+    races: normRaces,
     isRunning: typeof isRunning === 'boolean' ? isRunning : inhData.isRunning,
     lastPoll: new Date().toISOString()
   };
   console.log('[INH] Datos recibidos:', inhData.program.length, 'carreras,', inhData.races.length, 'actualizaciones');
 
-  // Persist to DB
-  if (db) {
-    db.guardarProgramaINH(vetToday(), inhData).catch(e =>
-      console.error('[INH] Error guardando en DB:', e.message)
-    );
+  // Persist to DB, one row per canonical race date
+  if (db && normRaces.length) {
+    const toProgram = (rs) => rs.map(r => ({
+      raceNumber: r.raceNumber,
+      track: r.track,
+      raceTime: r.raceTime || '',
+      raceDate: r.raceDate || '',
+      statusText: r.statusText || 'ABIERTA'
+    }));
+    const byFecha = {};
+    for (const r of normRaces) {
+      const d = r.fecha || fecha || vetToday();
+      if (!byFecha[d]) byFecha[d] = [];
+      byFecha[d].push(r);
+    }
+    const lastPoll = new Date().toISOString();
+    for (const [d, rs] of Object.entries(byFecha)) {
+      db.guardarProgramaINH(d, { program: toProgram(rs), races: rs, isRunning, lastPoll }).catch(e =>
+        console.error(`[INH] Error guardando en DB (${d}):`, e.message)
+      );
+    }
   }
 
   res.json({ ok: true });
+});
+
+app.post('/api/inh/clear', async (req, res) => {
+  if (req.headers['x-api-key'] !== process.env.API_KEY) {
+    return res.status(401).json({ error: 'No autorizado' });
+  }
+  if (!db) return res.status(503).json({ error: 'Base de datos no disponible' });
+  try {
+    const deleted = await db.vaciarProgramaINH();
+    res.json({ ok: true, deleted });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 app.get('/api/animalitos', (req, res) => {
