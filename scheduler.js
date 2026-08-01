@@ -137,18 +137,26 @@ class AnimalitosScheduler {
         }
         break;
       case 'lagranjita': {
-        const [fallback, api] = await Promise.all([
-          fetchLaGranjitaFallback(this.loteriaEmail, this.loteriaPassword, dateCompact),
-          fetchLaGranjitaFromAPI(today)
+        // Primary: LoteriaDeHoy (result/tbl 8/22) — reachable from Render.
+        // Secondary: lagranjita.com API — some environments get 403 (IP block).
+        const [primary, secondary] = await Promise.all([
+          fetchLaGranjitaFallback(this.loteriaEmail, this.loteriaPassword, dateCompact).catch((e) => {
+            console.error(`[${game.id}] LoteriaDeHoy:`, e.message);
+            return [];
+          }),
+          fetchLaGranjitaFromAPI(today).catch((e) => {
+            console.error(`[${game.id}] lagranjita.com:`, e.message);
+            return [];
+          })
         ]);
-        // Merge: prefer API (lagranjita.com) results, fill gaps with fallback (LoteriaDeHoy)
+        // Merge: primary (LoteriaDeHoy) wins per result_time, secondary fills gaps.
         const map = {};
-        for (const r of [...(api || []), ...(fallback || [])]) {
+        for (const r of [...(primary || []), ...(secondary || [])]) {
           const key = r.result_time;
           if (key && !map[key]) map[key] = r;
         }
         results = Object.values(map);
-        console.log(`[${game.id}] ${api?.length || 0} de API, ${fallback?.length || 0} de fallback, ${results.length} únicos`);
+        console.log(`[${game.id}] ${primary?.length || 0} LoteriaDeHoy, ${secondary?.length || 0} lagranjita.com, ${results.length} únicos`);
         break;
       }
       default:
