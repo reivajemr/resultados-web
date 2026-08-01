@@ -20,7 +20,7 @@ jobs:
           node-version: 22
       - name: Clear INH programa (opcional)
         if: github.event_name == 'workflow_dispatch' && inputs.clear_inh_programa
-        run: curl -s -X POST "https://resultados-web.onrender.com/api/inh/clear" -H "x-api-key: ${{ secrets.RENDER_API_KEY }}"
+        run: 'curl -s -X POST "https://resultados-web.onrender.com/api/inh/clear" -H "x-api-key: ${{ secrets.RENDER_API_KEY }}"'
       - name: Install dependencies
         run: npm install puppeteer axios puppeteer-extra puppeteer-extra-plugin-stealth
       - name: Run scraper
