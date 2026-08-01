@@ -18,7 +18,8 @@ const HTTP_USER = process.env.HTTP_USER;
 const HTTP_PASS = process.env.HTTP_PASS;
 const API_KEY = process.env.API_KEY;
 
-const db = process.env.DATABASE_URL ? dbModule : null;
+const hasDb = !!(process.env.DATABASE_URL || process.env.PGHOST || process.env.PGPASSWORD || process.env.PGDATABASE);
+const db = hasDb ? dbModule : null;
 
 const VET_OFFSET = -4 * 3600000;
 function vetToday() {

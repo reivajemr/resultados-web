@@ -2,34 +2,62 @@ import pg from 'pg';
 
 const ssl = { rejectUnauthorized: false };
 
+function looksLikeValidHost(host) {
+  if (!host) return false;
+  if (host === 'localhost' || host === '127.0.0.1') return true;
+  if (/^\d{1,3}(\.\d{1,3}){3}$/.test(host)) return true;
+  return host.includes('.');
+}
+
 function makePool() {
   const raw = process.env.DATABASE_URL;
+  let useUrl = false;
+
   if (raw) {
     try {
       const u = new URL(raw);
-      console.log(`[DB] Conectando a host=${u.hostname} port=${u.port || '5432'} user=${u.username || '?'} db=${(u.pathname || '/postgres').slice(1)}`);
+      if (looksLikeValidHost(u.hostname)) {
+        useUrl = true;
+        console.log(`[DB] Conectando a host=${u.hostname} port=${u.port || '5432'} user=${u.username || '?'} db=${(u.pathname || '/postgres').slice(1)}`);
+      } else {
+        console.warn(`[DB] DATABASE_URL host "${u.hostname}" parece inválido; usaré env vars individuales si están disponibles`);
+      }
     } catch (e) {
       console.error('[DB] DATABASE_URL no es una URL válida:', e.message);
     }
+  }
+
+  if (useUrl) {
     return new pg.Pool({
       connectionString: raw,
       ssl: raw.includes('localhost') ? false : ssl
     });
   }
-  // Fallback: variables individuales (evita problemas con caracteres especiales en el password)
-  // pg lee nativamente PGHOST, PGPORT, PGUSER, PGPASSWORD, PGDATABASE
-  console.log(`[DB] Usando env vars individuales (PGHOST=${process.env.PGHOST || 'no definido'})`);
-  return new pg.Pool({ ssl });
+
+  if (process.env.PGHOST || process.env.PGPASSWORD || process.env.PGDATABASE) {
+    console.log(`[DB] Usando env vars individuales (PGHOST=${process.env.PGHOST || 'no definido'})`);
+    return new pg.Pool({ ssl });
+  }
+
+  console.log('[DB] Sin configuración de DB — datos solo en memoria');
+  return null;
 }
 
 const pool = makePool();
 
-pool.on('error', (err) => {
-  console.error('[DB] Error en pool:', err.message);
-});
+if (pool) {
+  pool.on('error', (err) => {
+    console.error('[DB] Error en pool:', err.message);
+  });
+}
+
+function mustPool() {
+  if (!pool) throw new Error('Base de datos no configurada');
+  return pool;
+}
 
 export async function initDB() {
-  const client = await pool.connect();
+  const client = await mustPool().connect();
   try {
     await client.query(`
       CREATE TABLE IF NOT EXISTS resultados (
@@ -50,7 +78,7 @@ export async function initDB() {
 }
 
 export async function guardarResultado(fuente, fecha, hora, datos, estado = 'completed') {
-  const client = await pool.connect();
+  const client = await mustPool().connect();
   try {
     await client.query(
       `INSERT INTO resultados (fuente, fecha, hora, datos, estado, actualizado)
@@ -65,7 +93,7 @@ export async function guardarResultado(fuente, fecha, hora, datos, estado = 'com
 }
 
 export async function cargarResultados(fuente, fecha) {
-  const client = await pool.connect();
+  const client = await mustPool().connect();
   try {
     const { rows } = await client.query(
       `SELECT hora, datos, estado FROM resultados
@@ -80,7 +108,7 @@ export async function cargarResultados(fuente, fecha) {
 }
 
 export async function guardarProgramaINH(fecha, programa) {
-  const client = await pool.connect();
+  const client = await mustPool().connect();
   try {
     await client.query(
       `INSERT INTO inh_programa (fecha, datos, actualizado)
@@ -95,7 +123,7 @@ export async function guardarProgramaINH(fecha, programa) {
 }
 
 export async function cargarProgramaINH(fecha) {
-  const client = await pool.connect();
+  const client = await mustPool().connect();
   try {
     const { rows } = await client.query(
       `SELECT datos FROM inh_programa WHERE fecha = $1`,
@@ -108,7 +136,7 @@ export async function cargarProgramaINH(fecha) {
 }
 
 export async function initAllTables() {
-  const client = await pool.connect();
+  const client = await mustPool().connect();
   try {
     await client.query(`
       CREATE TABLE IF NOT EXISTS resultados (
