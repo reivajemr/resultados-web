@@ -238,17 +238,46 @@ async function extractRaces(page) {
     return 'La Rinconada';
   });
 
-  // Get race numbers from tabs
+  // Get race numbers from tabs (broad matching: "C1", "C 1", "Carrera 1")
   const raceNumbers = await page.evaluate(() => {
     const nums = [];
-    for (const btn of document.querySelectorAll('button')) {
-      const m = btn.textContent?.trim().match(/^C(\d+)$/);
-      if (m) nums.push(parseInt(m[1]));
-    }
+    const collect = (els) => {
+      for (const el of els) {
+        const t = (el.textContent || '').trim();
+        let m = t.match(/^C\s*(\d{1,2})$/i);
+        if (!m) m = t.match(/^Carrera\s*(\d{1,2})$/i);
+        if (m) {
+          const n = parseInt(m[1]);
+          if (!nums.includes(n)) nums.push(n);
+        }
+      }
+    };
+    collect(document.querySelectorAll('button'));
+    collect(document.querySelectorAll('[role="tab"], a, [class*="tab"]'));
     return nums.sort((a, b) => a - b);
   });
 
   console.log(`[INH] ${track}: ${raceNumbers.length} races (${raceNumbers.join(', ')})`);
+
+  // ── Diagnostic: if no races were found, dump the page state ──
+  if (raceNumbers.length === 0) {
+    const diag = await page.evaluate(() => {
+      const buttons = Array.from(document.querySelectorAll('button'));
+      const leafC = Array.from(document.querySelectorAll('*'))
+        .filter(el => el.children.length === 0 && /C\s*\d/i.test((el.textContent || '').trim()))
+        .map(el => (el.textContent || '').trim())
+        .slice(0, 20);
+      return {
+        url: location.href,
+        trigger: document.querySelector('[data-slot="select-value"]')?.textContent?.trim() || '',
+        buttonsCount: buttons.length,
+        buttons: buttons.map(b => (b.textContent || '').trim()).slice(0, 40),
+        leafC,
+        bodyHead: document.body.innerText.slice(0, 1000)
+      };
+    });
+    console.log('[INH] DIAG 0 races:', JSON.stringify(diag));
+  }
 
   const races = [];
   for (const raceNum of raceNumbers) {
@@ -258,7 +287,8 @@ async function extractRaces(page) {
       const otherNum = raceNum === raceNumbers[0] ? raceNumbers[1] : raceNumbers[0];
       await page.evaluate((num) => {
         for (const btn of document.querySelectorAll('button')) {
-          if (btn.textContent?.trim() === `C${num}`) { btn.click(); return; }
+          const t = (btn.textContent || '').trim();
+          if (t === `C${num}` || t === `Carrera ${num}` || t === `C ${num}`) { btn.click(); return; }
         }
       }, otherNum);
       await new Promise(r => setTimeout(r, 300));
@@ -574,7 +604,15 @@ async function run() {
     });
 
     // ── Extract La Rinconada ──
-    const lr = await extractRaces(page);
+    let lr = await extractRaces(page);
+
+    // If La Rinconada came back empty (hydration/route issue), reload and retry once
+    if (!lr.races.length) {
+      console.log('[INH] La Rinconada vacío; recargando la página y reintentando...');
+      await page.reload({ waitUntil: 'networkidle0', timeout: 30000 }).catch(() => {});
+      await new Promise(r => setTimeout(r, 5000));
+      lr = await extractRaces(page);
+    }
 
     // ── Switch to Valencia (or Santa Rita) and extract ──
     console.log('[INH] Switching to Valencia...');
