@@ -603,14 +603,20 @@ async function run() {
       }
     });
 
+    // ── La página puede iniciar sin hipódromo seleccionado ──
+    // ("Seleccionar hipódromo..."), así que forzamos La Rinconada.
+    console.log('[INH] Asegurando hipódromo La Rinconada...');
+    await switchTrack(page, 'La Rinconada');
+
     // ── Extract La Rinconada ──
     let lr = await extractRaces(page);
 
-    // If La Rinconada came back empty (hydration/route issue), reload and retry once
+    // If La Rinconada still empty, reload and retry once
     if (!lr.races.length) {
       console.log('[INH] La Rinconada vacío; recargando la página y reintentando...');
       await page.reload({ waitUntil: 'networkidle0', timeout: 30000 }).catch(() => {});
       await new Promise(r => setTimeout(r, 5000));
+      await switchTrack(page, 'La Rinconada');
       lr = await extractRaces(page);
     }
 
