@@ -511,6 +511,21 @@ async function extractRaces(page) {
   return { track, races, raceNumbers, fecha: trackFecha };
 }
 
+async function fetchServerJornada() {
+  if (!API_KEY) return null;
+  try {
+    const resp = await axios.get(`${RENDER_URL}/api/inh/jornada`, {
+      headers: { 'x-api-key': API_KEY },
+      timeout: 15000
+    });
+    console.log('[INH] Jornada del servidor:', JSON.stringify(resp.data));
+    return resp.data;
+  } catch (err) {
+    console.log(`[INH] No se pudo consultar la jornada del servidor: ${err.message}`);
+    return null;
+  }
+}
+
 async function run() {
   if (!INH_USER || !INH_PASS) throw new Error('Faltan INH_USER o INH_PASS en secrets');
 
@@ -560,17 +575,28 @@ async function run() {
       if (switched2) santa = await extractRaces(page);
     }
 
-    // ── Keep only today/future jornadas; skip stale or closed-only cards ──
+    // ── Keep ONLY today's jornada ──
+    // The fecha comes from an OPEN race's header (closed races lose the date).
+    // When a track is all-closed we ask the server which tracks it knows as
+    // today's jornada and only keep it if the server confirms it (so an old
+    // orphaned jornada, e.g. Valencia, is never sent).
     const todayStr = vetDateStr(0);
+    const tracks = [lr, val, santa].filter(Boolean);
+
+    const needsServer = tracks.some(t => !t.fecha);
+    const serverJornada = needsServer ? await fetchServerJornada() : null;
+    const serverTodayTracks = (serverJornada?.tracks || [])
+      .map(n => (n || '').trim().toLowerCase()).filter(Boolean);
+
     const allRaces = [];
-    for (const t of [lr, val, santa]) {
-      if (!t) continue;
-      if (!t.fecha) {
-        console.log(`[INH] ${t.track}: omitida, sin fecha (todo cerrado / jornada vieja)`);
-        continue;
+    for (const t of tracks) {
+      let effFecha = t.fecha || '';
+      if (!effFecha && serverTodayTracks.includes((t.track || '').trim().toLowerCase())) {
+        effFecha = todayStr;
+        console.log(`[INH] ${t.track}: sin fecha (todo cerrado) pero confirmado como HOY por el servidor`);
       }
-      if (t.fecha < todayStr) {
-        console.log(`[INH] ${t.track}: omitida jornada pasada (${t.fecha})`);
+      if (effFecha !== todayStr) {
+        console.log(`[INH] ${t.track}: omitida (${effFecha ? 'jornada ' + effFecha : 'sin fecha / no confirmada hoy'})`);
         continue;
       }
       allRaces.push(...t.races);
@@ -599,9 +625,15 @@ async function run() {
         const payload = { fecha, program, races, isRunning: true };
         const totalHorses = races.reduce((s, r) => s + r.horses.length, 0);
         console.log(`[INH] Sending ${races.length} races for ${fecha}, ${totalHorses} horses (${[...new Set(races.map(r => r.track))].join(', ')})`);
-        await axios.post(`${RENDER_URL}/api/inh/data`, payload, {
-          headers: { 'Content-Type': 'application/json', 'x-api-key': API_KEY }
-        });
+        try {
+          const resp = await axios.post(`${RENDER_URL}/api/inh/data`, payload, {
+            headers: { 'Content-Type': 'application/json', 'x-api-key': API_KEY },
+            validateStatus: () => true
+          });
+          console.log(`[INH] POST ${fecha} -> HTTP ${resp.status}`);
+        } catch (err) {
+          console.error(`[INH] POST ${fecha} falló: ${err.message}`);
+        }
       }
       console.log('[INH] Data sent OK');
     }

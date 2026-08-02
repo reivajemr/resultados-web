@@ -165,6 +165,36 @@ app.post('/api/inh/data', (req, res) => {
   res.json({ ok: true });
 });
 
+app.get('/api/inh/jornada', async (req, res) => {
+  const today = vetToday();
+  const tracks = [];
+  let hasPrograma = false;
+  let racesCount = 0;
+  if (db) {
+    try {
+      const saved = await db.cargarProgramaINH(today);
+      if (saved && Array.isArray(saved.races) && saved.races.length) {
+        hasPrograma = true;
+        racesCount = saved.races.length;
+        for (const r of saved.races) {
+          const t = r.track || r.hippodromo;
+          if (t && !tracks.includes(t)) tracks.push(t);
+        }
+      }
+    } catch (err) {
+      console.error('[INH] Error leyendo jornada de hoy:', err.message);
+    }
+  }
+  if (!hasPrograma && Array.isArray(inhData?.races) && inhData.races.length) {
+    hasPrograma = true;
+    racesCount = inhData.races.length;
+    for (const r of inhData.races) {
+      if (r.track && !tracks.includes(r.track)) tracks.push(r.track);
+    }
+  }
+  res.json({ fecha: today, tracks, hasPrograma, racesCount });
+});
+
 app.post('/api/inh/clear', async (req, res) => {
   if (req.headers['x-api-key'] !== process.env.API_KEY) {
     return res.status(401).json({ error: 'No autorizado' });
