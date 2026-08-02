@@ -507,7 +507,10 @@ async function extractRaces(page) {
     if (!r.fecha) r.fecha = trackFecha;
     if (!r.raceDate && trackFecha) r.raceDate = formatRaceDate(trackFecha);
   }
-  console.log(`[INH] ${track}: ${races.length} races, fecha=${trackFecha || '(sin fecha, todo cerrado)'}`);
+  const withPositions = races.map(r => ({ n: r.raceNumber, pos: (r.horses || []).filter(h => h.position).length }))
+    .filter(x => x.pos > 0);
+  console.log(`[INH] ${track}: ${races.length} races, fecha=${trackFecha || '(sin fecha, todo cerrado)'} | carreras con posiciones: ${withPositions.length}`);
+  if (withPositions.length) console.log('[INH]   posiciones por carrera:', withPositions.map(x => `C${x.n}=${x.pos}`).join(', '));
   return { track, races, raceNumbers, fecha: trackFecha };
 }
 
@@ -641,7 +644,8 @@ async function run() {
         }));
         const payload = { fecha, program, races, isRunning: true };
         const totalHorses = races.reduce((s, r) => s + r.horses.length, 0);
-        console.log(`[INH] Sending ${races.length} races for ${fecha}, ${totalHorses} horses (${[...new Set(races.map(r => r.track))].join(', ')})`);
+        const totalPos = races.reduce((s, r) => s + (r.horses || []).filter(h => h.position).length, 0);
+        console.log(`[INH] Sending ${races.length} races for ${fecha}, ${totalHorses} horses (${[...new Set(races.map(r => r.track))].join(', ')}), posiciones=${totalPos}`);
         try {
           const resp = await axios.post(`${RENDER_URL}/api/inh/data`, payload, {
             headers: { 'Content-Type': 'application/json', 'x-api-key': API_KEY },
