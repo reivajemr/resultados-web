@@ -232,15 +232,12 @@ app.get('/api/inh/needs-fetch', async (req, res) => {
 
   const nowVET = new Date(Date.now() + VET_OFFSET);
   const nowMin = nowVET.getUTCHours() * 60 + nowVET.getUTCMinutes();
-  const cooldownMs = 10 * 60 * 1000;
-
   for (const r of races) {
     const isClosed = String(r.statusText || '').toUpperCase() === 'CERRADA';
     const hasResult = Array.isArray(r.horses) && r.horses.some(h => h && h.position);
     if (isClosed && !hasResult) {
-      if (lastPollMs && Date.now() - lastPollMs < cooldownMs) {
-        return res.json({ fetch: false, reason: 'resultado pendiente, en cooldown' });
-      }
+      // Siempre pide captura: el cron corre cada ~10 min y esto se detiene
+      // solo cuando el resultado queda guardado (con posiciones).
       return res.json({ fetch: true, reason: `C${r.raceNumber}: cerrada sin resultados` });
     }
     if (!isClosed) {
