@@ -26,6 +26,19 @@ function vetToday() {
   return new Date(Date.now() + VET_OFFSET).toISOString().split('T')[0];
 }
 
+// "01:10 p. m." / "02:00 p. m." -> { h, min } en 24h, o null
+function parseRaceTime(t) {
+  if (!t) return null;
+  const m = String(t).match(/(\d{1,2}):(\d{2})\s*([ap])\.?\s*m\.?/i);
+  if (!m) return null;
+  let h = parseInt(m[1], 10);
+  const min = parseInt(m[2], 10);
+  const mer = m[3].toLowerCase();
+  if (mer === 'p' && h !== 12) h += 12;
+  if (mer === 'a' && h === 12) h = 0;
+  return { h, min };
+}
+
 const animalitos = new AnimalitosScheduler({
   loteriaEmail: process.env.LOTERIA_EMAIL,
   loteriaPassword: process.env.LOTERIA_PASSWORD,
@@ -193,6 +206,51 @@ app.get('/api/inh/jornada', async (req, res) => {
     }
   }
   res.json({ fecha: today, tracks, hasPrograma, racesCount });
+});
+
+// Responde si el scraper debe correr: "¿hay una carrera cerrada esperando resultados?"
+app.get('/api/inh/needs-fetch', async (req, res) => {
+  const today = vetToday();
+  let saved = null;
+  if (db) {
+    try {
+      saved = await db.cargarProgramaINH(today);
+    } catch (err) {
+      console.error('[INH] Error en needs-fetch (DB):', err.message);
+    }
+  }
+  let races = saved && Array.isArray(saved.races) ? saved.races : [];
+  let lastPollMs = saved && saved.lastPoll ? new Date(saved.lastPoll).getTime() : 0;
+  if (!races.length && Array.isArray(inhData?.races) && inhData.races.length) {
+    races = inhData.races;
+    if (inhData.lastPoll) lastPollMs = new Date(inhData.lastPoll).getTime();
+  }
+
+  if (!races.length) {
+    return res.json({ fetch: true, reason: 'sin programa guardado' });
+  }
+
+  const nowVET = new Date(Date.now() + VET_OFFSET);
+  const nowMin = nowVET.getUTCHours() * 60 + nowVET.getUTCMinutes();
+  const cooldownMs = 10 * 60 * 1000;
+
+  for (const r of races) {
+    const isClosed = String(r.statusText || '').toUpperCase() === 'CERRADA';
+    const hasResult = Array.isArray(r.horses) && r.horses.some(h => h && h.position);
+    if (isClosed && !hasResult) {
+      if (lastPollMs && Date.now() - lastPollMs < cooldownMs) {
+        return res.json({ fetch: false, reason: 'resultado pendiente, en cooldown' });
+      }
+      return res.json({ fetch: true, reason: `C${r.raceNumber}: cerrada sin resultados` });
+    }
+    if (!isClosed) {
+      const t = parseRaceTime(r.raceTime);
+      if (t && t.h * 60 + t.min <= nowMin) {
+        return res.json({ fetch: true, reason: `C${r.raceNumber}: vencida sin cerrar` });
+      }
+    }
+  }
+  return res.json({ fetch: false, reason: 'nada pendiente' });
 });
 
 app.post('/api/inh/clear', async (req, res) => {

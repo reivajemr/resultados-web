@@ -1,17 +1,19 @@
 name: INH Scraper
 
 on:
-  schedule:
-    - cron: '*/10 12-23 * * *'
   workflow_dispatch:
     inputs:
       clear_inh_programa:
         description: 'Borrar todos los programas INH en DB antes de scrapear'
         type: boolean
         default: false
+      force_scrape:
+        description: 'Forzar scrape aunque el servidor diga que no hay nada pendiente'
+        type: boolean
+        default: false
 
 jobs:
-  scrape:
+  check-and-scrape:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -19,11 +21,21 @@ jobs:
         with:
           node-version: 22
       - name: Clear INH programa (opcional)
-        if: github.event_name == 'workflow_dispatch' && inputs.clear_inh_programa
+        if: inputs.clear_inh_programa
         run: 'curl -s -X POST "https://resultados-web.onrender.com/api/inh/clear" -H "x-api-key: ${{ secrets.RENDER_API_KEY }}"'
+      - name: Check if scrape is needed
+        id: check
+        if: ${{ !inputs.force_scrape }}
+        run: |
+          RESP=$(curl -s -H "x-api-key: ${{ secrets.RENDER_API_KEY }}" "https://resultados-web.onrender.com/api/inh/needs-fetch")
+          echo "needs_fetch_response=$RESP"
+          NEEDS=$(echo "$RESP" | node -e "let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>{try{const j=JSON.parse(d);console.log(j.fetch===false?'no':'yes')}catch(e){console.log('yes')}})")
+          echo "fetch=$NEEDS" >> "$GITHUB_OUTPUT"
       - name: Install dependencies
+        if: ${{ inputs.force_scrape || steps.check.outputs.fetch == 'yes' }}
         run: npm install puppeteer axios puppeteer-extra puppeteer-extra-plugin-stealth
       - name: Run scraper
+        if: ${{ inputs.force_scrape || steps.check.outputs.fetch == 'yes' }}
         env:
           INH_USER: ${{ secrets.INH_USER }}
           INH_PASS: ${{ secrets.INH_PASS }}
