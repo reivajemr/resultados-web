@@ -576,27 +576,34 @@ async function run() {
     }
 
     // ── Keep ONLY today's jornada ──
-    // The fecha comes from an OPEN race's header (closed races lose the date).
-    // When a track is all-closed we ask the server which tracks it knows as
-    // today's jornada and only keep it if the server confirms it (so an old
-    // orphaned jornada, e.g. Valencia, is never sent).
+    // Primary rule: a track is TODAY when it has at least one OPEN race
+    // (an open race = the current jornada; closed races lose their date).
+    // When a track is all-closed we fall back to the server's known today
+    // tracks, so an old orphaned jornada (e.g. Valencia) is never sent.
     const todayStr = vetDateStr(0);
     const tracks = [lr, val, santa].filter(Boolean);
 
-    const needsServer = tracks.some(t => !t.fecha);
+    const needsServer = tracks.some(t => !t.races.some(r => r.statusText === 'ABIERTA'));
     const serverJornada = needsServer ? await fetchServerJornada() : null;
     const serverTodayTracks = (serverJornada?.tracks || [])
       .map(n => (n || '').trim().toLowerCase()).filter(Boolean);
 
     const allRaces = [];
     for (const t of tracks) {
+      const trackKey = (t.track || '').trim().toLowerCase();
+      const hasOpen = t.races.some(r => r.statusText === 'ABIERTA');
       let effFecha = t.fecha || '';
-      if (!effFecha && serverTodayTracks.includes((t.track || '').trim().toLowerCase())) {
+
+      if (hasOpen && (!effFecha || effFecha === todayStr)) {
         effFecha = todayStr;
-        console.log(`[INH] ${t.track}: sin fecha (todo cerrado) pero confirmado como HOY por el servidor`);
+        console.log(`[INH] ${t.track}: jornada actual detectada por carrera ABIERTA`);
+      } else if (!hasOpen && !effFecha && serverTodayTracks.includes(trackKey)) {
+        effFecha = todayStr;
+        console.log(`[INH] ${t.track}: todo cerrado pero confirmado como HOY por el servidor`);
       }
+
       if (effFecha !== todayStr) {
-        console.log(`[INH] ${t.track}: omitida (${effFecha ? 'jornada ' + effFecha : 'sin fecha / no confirmada hoy'})`);
+        console.log(`[INH] ${t.track}: omitida (${effFecha ? 'jornada ' + effFecha : 'sin ABIERTA / no confirmada hoy'})`);
         continue;
       }
       allRaces.push(...t.races);
