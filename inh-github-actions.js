@@ -514,12 +514,22 @@ async function extractRaces(page) {
 async function fetchServerJornada() {
   if (!API_KEY) return null;
   try {
-    const resp = await axios.get(`${RENDER_URL}/api/inh/jornada`, {
+    // Use the existing /api/inh endpoint (works on any deployed version);
+    // it returns today's races from the server, from which we derive tracks.
+    const resp = await axios.get(`${RENDER_URL}/api/inh`, {
       headers: { 'x-api-key': API_KEY },
       timeout: 15000
     });
-    console.log('[INH] Jornada del servidor:', JSON.stringify(resp.data));
-    return resp.data;
+    const data = resp.data || {};
+    const races = Array.isArray(data.races) ? data.races : [];
+    const tracks = [];
+    for (const r of races) {
+      const t = r.track || r.hippodromo;
+      if (t && !tracks.includes(t)) tracks.push(t);
+    }
+    const out = { fecha: data.fecha || '', tracks, hasPrograma: races.length > 0 };
+    console.log('[INH] Jornada del servidor (vía /api/inh):', JSON.stringify(out));
+    return out;
   } catch (err) {
     console.log(`[INH] No se pudo consultar la jornada del servidor: ${err.message}`);
     return null;
