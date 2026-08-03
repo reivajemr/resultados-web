@@ -569,6 +569,24 @@ async function fetchServerJornada() {
   }
 }
 
+// Avisa al servidor que ya se verificó que hoy no hay jornada (marca la ventana).
+async function reportDiscoveryChecked() {
+  if (!API_KEY) return;
+  const now = new Date(Date.now() + 4 * 3600000);
+  const m = now.getUTCHours() * 60 + now.getUTCMinutes();
+  const ventana = (m >= 18 * 60 && m < 18 * 60 + 30) ? 'afternoon' : 'morning';
+  try {
+    const resp = await axios.post(
+      `${RENDER_URL}/api/inh/discovery-checked`,
+      { ventana },
+      { headers: { 'Content-Type': 'application/json', 'x-api-key': API_KEY }, validateStatus: () => true, timeout: 15000 }
+    );
+    console.log(`[INH] discovery-checked (${ventana}) -> HTTP ${resp.status}`);
+  } catch (err) {
+    console.error(`[INH] discovery-checked falló: ${err.message}`);
+  }
+}
+
 async function run() {
   if (!INH_USER || !INH_PASS) throw new Error('Faltan INH_USER o INH_PASS en secrets');
 
@@ -632,16 +650,19 @@ async function run() {
       if (switched2) santa = await extractRaces(page);
     }
 
-    // ── Keep ONLY today's jornada ──
-    // Primary rule: a track is TODAY when it has at least one OPEN race
-    // (an open race = the current jornada; closed races lose their date).
-    // When a track is all-closed we fall back to the server's known today
-    // tracks, so an old orphaned jornada (e.g. Valencia) is never sent.
+    // ── Keep today's (or upcoming future) jornada ──
+    // A track is TODAY when it has an OPEN race (closed races lose their date).
+    // An OPEN race on a future date = the upcoming jornada (published days before),
+    // stored under its real fecha. All-closed tracks fall back to the server's
+    // known today ONLY if the server confirms its jornada is today, so an old
+    // orphaned jornada (e.g. Valencia) is never sent.
     const todayStr = vetDateStr(0);
     const tracks = [lr, val, santa].filter(Boolean);
 
     const needsServer = tracks.some(t => !t.races.some(r => r.statusText === 'ABIERTA'));
     const serverJornada = needsServer ? await fetchServerJornada() : null;
+    // Solo confirmar como HOY si el servidor dice que su jornada coincide con HOY
+    const serverIsToday = !!serverJornada && serverJornada.fecha === todayStr;
     const serverTodayTracks = (serverJornada?.tracks || [])
       .map(n => (n || '').trim().toLowerCase()).filter(Boolean);
 
@@ -651,24 +672,40 @@ async function run() {
       const hasOpen = t.races.some(r => r.statusText === 'ABIERTA');
       let effFecha = t.fecha || '';
 
-      if (hasOpen && (!effFecha || effFecha === todayStr)) {
-        effFecha = todayStr;
-        console.log(`[INH] ${t.track}: jornada actual detectada por carrera ABIERTA`);
-      } else if (!hasOpen && !effFecha && serverTodayTracks.includes(trackKey)) {
+      if (hasOpen) {
+        if (effFecha && effFecha > todayStr) {
+          console.log(`[INH] ${t.track}: jornada publicada para el ${effFecha}`);
+        } else {
+          effFecha = todayStr;
+          console.log(`[INH] ${t.track}: jornada actual detectada por carrera ABIERTA`);
+        }
+      } else if (!hasOpen && !effFecha && serverIsToday && serverTodayTracks.includes(trackKey)) {
         effFecha = todayStr;
         console.log(`[INH] ${t.track}: todo cerrado pero confirmado como HOY por el servidor`);
       }
 
-      if (effFecha !== todayStr) {
-        console.log(`[INH] ${t.track}: omitida (${effFecha ? 'jornada ' + effFecha : 'sin ABIERTA / no confirmada hoy'})`);
+      if (!effFecha) {
+        console.log(`[INH] ${t.track}: omitida (sin fecha reconocida / no confirmada hoy)`);
+        continue;
+      }
+      if (effFecha < todayStr) {
+        console.log(`[INH] ${t.track}: omitida (jornada pasada ${effFecha})`);
         continue;
       }
       allRaces.push(...t.races);
     }
 
+    const anyRaces = tracks.reduce((s, t) => s + (t.races || []).length, 0);
+
     // ── Group by canonical date & send one payload per jornada ──
     if (allRaces.length === 0) {
-      console.warn('[INH] Sin jornadas actuales; no se envía nada para no sobrescribir');
+      console.warn('[INH] Sin jornadas hoy ni futuras; no se envía nada');
+      // Si la extracción sí cargó carreras (solo jornada pasada/cerrada) y es una
+      // ventana de descubrimiento, avisar al servidor para no pedir más hoy.
+      if (anyRaces > 0) {
+        console.log('[INH] Reportando discovery-checked...');
+        await reportDiscoveryChecked();
+      }
     } else {
       const byFecha = {};
       for (const r of allRaces) {

@@ -45,7 +45,14 @@ const animalitos = new AnimalitosScheduler({
   db
 });
 
-let inhData = { program: [], races: [], lastPoll: null, isRunning: false };
+let inhData = {
+  program: [],
+  races: [],
+  lastPoll: null,
+  isRunning: false,
+  fecha: null,
+  discovery: { morning: '', afternoon: '' }
+};
 
 /* ───── Security middleware ───── */
 
@@ -124,7 +131,8 @@ app.get('/api/inh', async (req, res) => {
     program: Array.isArray(inhData?.program) ? inhData.program : [],
     races: Array.isArray(inhData?.races) ? inhData.races : [],
     isRunning: inhData?.isRunning || false,
-    lastPoll: inhData?.lastPoll || null
+    lastPoll: inhData?.lastPoll || null,
+    fecha: inhData?.fecha || ''
   });
 });
 
@@ -148,7 +156,8 @@ app.post('/api/inh/data', (req, res) => {
     })),
     races: todayRaces,
     isRunning: typeof isRunning === 'boolean' ? isRunning : inhData.isRunning,
-    lastPoll: new Date().toISOString()
+    lastPoll: new Date().toISOString(),
+    fecha: fecha || today
   };
   console.log('[INH] Datos recibidos:', inhData.program.length, 'carreras de hoy,', normRaces.length, 'totales');
 
@@ -208,7 +217,10 @@ app.get('/api/inh/jornada', async (req, res) => {
   res.json({ fecha: today, tracks, hasPrograma, racesCount });
 });
 
-// Responde si el scraper debe correr: "¿hay una carrera cerrada esperando resultados?"
+// Responde si el scraper debe correr.
+// 3 estados: (1) jornada de hoy con algo pendiente -> scrapear resultados;
+//            (2) hay jornada futura conocida -> nada que hacer hoy;
+//            (3) nada conocido -> solo en ventanas de descubrimiento (08:00-08:30 y 18:00-18:30 VET).
 app.get('/api/inh/needs-fetch', async (req, res) => {
   const today = vetToday();
   let saved = null;
@@ -220,34 +232,67 @@ app.get('/api/inh/needs-fetch', async (req, res) => {
     }
   }
   let races = saved && Array.isArray(saved.races) ? saved.races : [];
-  let lastPollMs = saved && saved.lastPoll ? new Date(saved.lastPoll).getTime() : 0;
-  if (!races.length && Array.isArray(inhData?.races) && inhData.races.length) {
+  // El caché en memoria solo vale si corresponde a hoy (evita que ayer bloquee el día nuevo)
+  if (!races.length && Array.isArray(inhData?.races) && inhData.races.length && inhData.fecha === today) {
     races = inhData.races;
-    if (inhData.lastPoll) lastPollMs = new Date(inhData.lastPoll).getTime();
   }
 
-  if (!races.length) {
-    return res.json({ fetch: true, reason: 'sin programa guardado' });
-  }
-
-  const nowVET = new Date(Date.now() + VET_OFFSET);
-  const nowMin = nowVET.getUTCHours() * 60 + nowVET.getUTCMinutes();
-  for (const r of races) {
-    const isClosed = String(r.statusText || '').toUpperCase() === 'CERRADA';
-    const hasResult = Array.isArray(r.horses) && r.horses.some(h => h && h.position);
-    if (isClosed && !hasResult) {
-      // Siempre pide captura: el cron corre cada ~10 min y esto se detiene
-      // solo cuando el resultado queda guardado (con posiciones).
-      return res.json({ fetch: true, reason: `C${r.raceNumber}: cerrada sin resultados` });
-    }
-    if (!isClosed) {
-      const t = parseRaceTime(r.raceTime);
-      if (t && t.h * 60 + t.min <= nowMin) {
-        return res.json({ fetch: true, reason: `C${r.raceNumber}: vencida sin cerrar` });
+  // 1) Jornada de hoy: cadencia de resultados
+  if (races.length) {
+    const nowVET = new Date(Date.now() + VET_OFFSET);
+    const nowMin = nowVET.getUTCHours() * 60 + nowVET.getUTCMinutes();
+    for (const r of races) {
+      const isClosed = String(r.statusText || '').toUpperCase() === 'CERRADA';
+      const hasResult = Array.isArray(r.horses) && r.horses.some(h => h && h.position);
+      if (isClosed && !hasResult) {
+        return res.json({ fetch: true, reason: `C${r.raceNumber}: cerrada sin resultados` });
+      }
+      if (!isClosed) {
+        const t = parseRaceTime(r.raceTime);
+        if (t && t.h * 60 + t.min <= nowMin) {
+          return res.json({ fetch: true, reason: `C${r.raceNumber}: vencida sin cerrar` });
+        }
       }
     }
+    return res.json({ fetch: false, reason: 'nada pendiente' });
   }
-  return res.json({ fetch: false, reason: 'nada pendiente' });
+
+  // 2) ¿Hay jornada futura ya conocida? Nada que hacer hoy.
+  if (db) {
+    try {
+      const prox = await db.cargarProximaJornada(today);
+      if (prox) return res.json({ fetch: false, reason: `próxima jornada ${prox}` });
+    } catch (err) {
+      console.error('[INH] Error cargando próxima jornada:', err.message);
+    }
+  }
+
+  // 3) Descubrimiento por ventanas (08:00-08:30 y 18:00-18:30 VET)
+  const nowVET2 = new Date(Date.now() + VET_OFFSET);
+  const nowMin2 = nowVET2.getUTCHours() * 60 + nowVET2.getUTCMinutes();
+  if (nowMin2 >= 8 * 60 && nowMin2 < 8 * 60 + 30 && inhData.discovery.morning !== today) {
+    return res.json({ fetch: true, reason: 'discovery morning' });
+  }
+  if (nowMin2 >= 18 * 60 && nowMin2 < 18 * 60 + 30 && inhData.discovery.afternoon !== today) {
+    return res.json({ fetch: true, reason: 'discovery afternoon' });
+  }
+  return res.json({ fetch: false, reason: 'sin jornada; ya verificado hoy' });
+});
+
+// El scraper avisa que ya verificó que hoy no hay jornada (marca la ventana usada)
+app.post('/api/inh/discovery-checked', async (req, res) => {
+  if (req.headers['x-api-key'] !== process.env.API_KEY) {
+    return res.status(401).json({ error: 'No autorizado' });
+  }
+  const today = vetToday();
+  const ventana = req.body?.ventana === 'afternoon' ? 'afternoon' : 'morning';
+  inhData.discovery[ventana] = today;
+  if (db) {
+    db.guardarDiscovery(today, { ...inhData.discovery }).catch(e =>
+      console.error('[INH] Error guardando discovery:', e.message)
+    );
+  }
+  res.json({ ok: true, discovery: inhData.discovery });
 });
 
 app.post('/api/inh/clear', async (req, res) => {
@@ -477,11 +522,26 @@ app.listen(PORT, () => {
         program: Array.isArray(saved.program) ? saved.program : [],
         races: normalizeRaces(saved.races),
         isRunning: saved.isRunning || false,
-        lastPoll: saved.lastPoll || null
+        lastPoll: saved.lastPoll || null,
+        fecha: vetToday(),
+        discovery: inhData.discovery
       };
       console.log('[INH] Cargado desde DB:', inhData.program.length, 'carreras');
     } else {
       console.log('[INH] Sin datos guardados para hoy');
+    }
+
+    // Load discovery state (ventanas ya verificadas hoy)
+    try {
+      const disc = await db.cargarDiscovery(vetToday());
+      if (disc) {
+        inhData.discovery = {
+          morning: disc.morning || '',
+          afternoon: disc.afternoon || ''
+        };
+      }
+    } catch (err) {
+      console.error('[INH] Error cargando discovery:', err.message);
     }
   } else {
     console.log('[DB] Sin DATABASE_URL — datos solo en memoria');

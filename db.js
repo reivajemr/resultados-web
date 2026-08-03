@@ -145,6 +145,47 @@ export async function vaciarProgramaINH() {
   }
 }
 
+// Menor fecha con programa > hoy (próxima jornada conocida)
+export async function cargarProximaJornada(hoy) {
+  const client = await mustPool().connect();
+  try {
+    const { rows } = await client.query(
+      `SELECT fecha FROM inh_programa WHERE fecha > $1 ORDER BY fecha ASC LIMIT 1`,
+      [hoy]
+    );
+    return rows[0]?.fecha || null;
+  } finally {
+    client.release();
+  }
+}
+
+export async function guardarDiscovery(fecha, ventanas) {
+  const client = await mustPool().connect();
+  try {
+    await client.query(
+      `INSERT INTO inh_discovery (fecha, ventanas, actualizado)
+       VALUES ($1, $2, NOW())
+       ON CONFLICT (fecha) DO UPDATE SET ventanas = $2, actualizado = NOW()`,
+      [fecha, JSON.stringify(ventanas)]
+    );
+  } finally {
+    client.release();
+  }
+}
+
+export async function cargarDiscovery(fecha) {
+  const client = await mustPool().connect();
+  try {
+    const { rows } = await client.query(
+      `SELECT ventanas FROM inh_discovery WHERE fecha = $1`,
+      [fecha]
+    );
+    return rows[0]?.ventanas || null;
+  } finally {
+    client.release();
+  }
+}
+
 export async function initAllTables() {
   const client = await mustPool().connect();
   try {
@@ -165,6 +206,14 @@ export async function initAllTables() {
         id SERIAL PRIMARY KEY,
         fecha VARCHAR(10) NOT NULL UNIQUE,
         datos JSONB,
+        actualizado TIMESTAMP DEFAULT NOW()
+      )
+    `);
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS inh_discovery (
+        id SERIAL PRIMARY KEY,
+        fecha VARCHAR(10) NOT NULL UNIQUE,
+        ventanas JSONB,
         actualizado TIMESTAMP DEFAULT NOW()
       )
     `);
