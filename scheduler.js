@@ -229,9 +229,14 @@ class AnimalitosScheduler {
       const [rH, rM] = rTime.split(':').map(Number);
       const [tH, tM] = time.split(':').map(Number);
       if (rH === tH && rM === tM) {
+        const number = s.giveaway_results_number_literal;
+        const animal = s.giveaway_results_literal;
+        // Un sorteo sin número ni animal todavía no tiene resultado publicado;
+        // retornar null para que el scheduler siga reintentando (no marcar "completado" vacío).
+        if (number == null && animal == null) return null;
         return {
-          number: s.giveaway_results_number_literal,
-          animal: s.giveaway_results_literal,
+          number,
+          animal,
           color: s.giveaway_results_color,
           time: rTime,
           image: s.giveaway_results_image,

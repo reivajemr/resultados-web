@@ -354,6 +354,49 @@ app.get('/api/animalitos/historial', async (req, res) => {
   }
 });
 
+app.post('/api/animalitos/backfill', async (req, res) => {
+  if (req.headers['x-api-key'] !== process.env.API_KEY) {
+    return res.status(401).json({ error: 'No autorizado' });
+  }
+  if (!db) return res.status(503).json({ error: 'Base de datos no disponible' });
+  const { game, fecha, draws } = req.body || {};
+  if (!game || !fecha || !Array.isArray(draws) || !draws.length) {
+    return res.status(400).json({ error: 'Se requieren {game, fecha, draws[]}' });
+  }
+  const today = animalitos._getTodayStr();
+  const GAMES_LIST = (await import('./scheduler.js')).GAMES;
+  if (!GAMES_LIST.find(g => g.id === game)) {
+    return res.status(400).json({ error: `Juego desconocido: ${game}` });
+  }
+  const saved = [];
+  for (const d of draws) {
+    const time = d.time;
+    if (!time) continue;
+    const result = {
+      number: d.number ?? null,
+      animal: d.animal ?? null,
+      color: d.color ?? null,
+      time,
+      image: d.image ?? null,
+      literals: d.literals ?? null,
+      raw: d.raw ?? null
+    };
+    await db.guardarResultado(game, fecha, time, result);
+    if (fecha === today) {
+      if (animalitos.cache[fecha]?.[game]?.results) {
+        animalitos.cache[fecha][game].results[time] = result;
+      }
+      if (animalitos.state[fecha]?.[game]?.[time]) {
+        animalitos.state[fecha][game][time].status = 'completed';
+        animalitos.state[fecha][game][time].result = result;
+        animalitos.state[fecha][game][time].error = null;
+      }
+    }
+    saved.push(time);
+  }
+  res.json({ ok: true, game, fecha, saved });
+});
+
 app.post('/api/animalitos/migrate', async (req, res) => {
   if (!db) return res.status(503).json({ error: 'Base de datos no disponible' });
   try {
