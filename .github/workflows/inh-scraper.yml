@@ -1,5 +1,9 @@
 name: INH Scraper
 
+concurrency:
+  group: inh-scraper
+  cancel-in-progress: true
+
 on:
   workflow_dispatch:
     inputs:
