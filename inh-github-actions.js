@@ -589,9 +589,15 @@ async function fetchServerJornada() {
 // Avisa al servidor que ya se verificó que hoy no hay jornada (marca la ventana).
 async function reportDiscoveryChecked() {
   if (!API_KEY) return;
-  const now = new Date(Date.now() + 4 * 3600000);
+  const now = new Date(Date.now() - 4 * 3600000); // VET = UTC-4
   const m = now.getUTCHours() * 60 + now.getUTCMinutes();
-  const ventana = (m >= 18 * 60 && m < 18 * 60 + 30) ? 'afternoon' : 'morning';
+  const inMorning = m >= 8 * 60 && m < 8 * 60 + 30;
+  const inAfternoon = m >= 18 * 60 && m < 18 * 60 + 30;
+  if (!inMorning && !inAfternoon) {
+    console.log('[INH] discovery-checked omitido: fuera de ventana de descubrimiento');
+    return;
+  }
+  const ventana = inAfternoon ? 'afternoon' : 'morning';
   try {
     const resp = await requestWithRetry(({ timeout }) => axios.post(
       `${RENDER_URL}/api/inh/discovery-checked`,

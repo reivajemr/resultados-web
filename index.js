@@ -270,13 +270,18 @@ app.get('/api/inh/needs-fetch', async (req, res) => {
   // 3) Descubrimiento por ventanas (08:00-08:30 y 18:00-18:30 VET)
   const nowVET2 = new Date(Date.now() + VET_OFFSET);
   const nowMin2 = nowVET2.getUTCHours() * 60 + nowVET2.getUTCMinutes();
-  if (nowMin2 >= 8 * 60 && nowMin2 < 8 * 60 + 30 && inhData.discovery.morning !== today) {
+  const inMorning = nowMin2 >= 8 * 60 && nowMin2 < 8 * 60 + 30;
+  const inAfternoon = nowMin2 >= 18 * 60 && nowMin2 < 18 * 60 + 30;
+  if (inMorning && inhData.discovery.morning !== today) {
     return res.json({ fetch: true, reason: 'discovery morning' });
   }
-  if (nowMin2 >= 18 * 60 && nowMin2 < 18 * 60 + 30 && inhData.discovery.afternoon !== today) {
+  if (inAfternoon && inhData.discovery.afternoon !== today) {
     return res.json({ fetch: true, reason: 'discovery afternoon' });
   }
-  return res.json({ fetch: false, reason: 'sin jornada; ya verificado hoy' });
+  if ((inMorning && inhData.discovery.morning === today) || (inAfternoon && inhData.discovery.afternoon === today)) {
+    return res.json({ fetch: false, reason: 'ventana de descubrimiento ya verificada hoy' });
+  }
+  return res.json({ fetch: false, reason: 'sin jornada y fuera de ventana de descubrimiento' });
 });
 
 // El scraper avisa que ya verificó que hoy no hay jornada (marca la ventana usada)
