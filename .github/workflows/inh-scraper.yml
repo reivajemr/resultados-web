@@ -27,9 +27,24 @@ jobs:
         id: check
         if: ${{ !inputs.force_scrape }}
         run: |
-          RESP=$(curl -s -H "x-api-key: ${{ secrets.RENDER_API_KEY }}" "https://resultados-web.onrender.com/api/inh/needs-fetch")
-          echo "needs_fetch_response=$RESP"
-          NEEDS=$(echo "$RESP" | node -e "let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>{try{const j=JSON.parse(d);console.log(j.fetch===false?'no':'yes')}catch(e){console.log('yes')}})")
+          # Render free tier se duerme tras ~15 min sin tráfico; al despertar el frío
+          # devuelve "Internal server error (Correlation ID)". Reintentamos hasta 6 veces
+          # con espera para calentar la instancia antes de tomar la decisión.
+          RESP=""
+          for i in 1 2 3 4 5 6; do
+            RESP=$(curl -s -m 60 -H "x-api-key: ${{ secrets.RENDER_API_KEY }}" "https://resultados-web.onrender.com/api/inh/needs-fetch")
+            NEEDS=$(echo "$RESP" | node -e "let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>{try{const j=JSON.parse(d);console.log(j.fetch===false?'no':'yes')}catch(e){console.log('')}})")
+            echo "attempt=$i needs_fetch_response=$RESP"
+            if [ -n "$NEEDS" ]; then
+              break
+            fi
+            echo "attempt=$i no respondió JSON (posible cold start), esperando 15s..."
+            sleep 15
+          done
+          # Si nunca respondió, la última RESP queda tal cual; fallback a 'yes' para scrapear.
+          if [ -z "$NEEDS" ]; then
+            NEEDS=$(echo "$RESP" | node -e "let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>{try{const j=JSON.parse(d);console.log(j.fetch===false?'no':'yes')}catch(e){console.log('yes')}})")
+          fi
           echo "fetch=$NEEDS" >> "$GITHUB_OUTPUT"
       - name: Install dependencies
         if: ${{ inputs.force_scrape || steps.check.outputs.fetch == 'yes' }}

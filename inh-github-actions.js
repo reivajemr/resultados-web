@@ -9,6 +9,23 @@ const API_KEY = process.env.RENDER_API_KEY;
 const INH_USER = process.env.INH_USER;
 const INH_PASS = process.env.INH_PASS;
 
+// Render free tier se duerme tras ~15 min sin tráfico; al despertar el frío devuelve
+// "Internal server error (Correlation ID)". Reintentamos las llamadas al server para
+// que el cold start no convierta un run intermitente en fallo.
+async function requestWithRetry(fn, { attempts = 4, delayMs = 10000, timeoutMs = 60000 } = {}) {
+  let lastErr;
+  for (let i = 1; i <= attempts; i++) {
+    try {
+      return await fn({ timeout: timeoutMs });
+    } catch (err) {
+      lastErr = err;
+      console.log(`[INH] Intento ${i}/${attempts} falló (${err.message}); reintentando en ${delayMs / 1000}s...`);
+      if (i < attempts) await new Promise(r => setTimeout(r, delayMs));
+    }
+  }
+  throw lastErr;
+}
+
 // The SSR page renders all times 4 hours behind (timezone bug in Next.js).
 // Add 4 hours to correct them.
 function fixTime(timeStr) {
@@ -549,10 +566,10 @@ async function fetchServerJornada() {
   try {
     // Use the existing /api/inh endpoint (works on any deployed version);
     // it returns today's races from the server, from which we derive tracks.
-    const resp = await axios.get(`${RENDER_URL}/api/inh`, {
+    const resp = await requestWithRetry(({ timeout }) => axios.get(`${RENDER_URL}/api/inh`, {
       headers: { 'x-api-key': API_KEY },
-      timeout: 15000
-    });
+      timeout
+    }));
     const data = resp.data || {};
     const races = Array.isArray(data.races) ? data.races : [];
     const tracks = [];
@@ -576,11 +593,11 @@ async function reportDiscoveryChecked() {
   const m = now.getUTCHours() * 60 + now.getUTCMinutes();
   const ventana = (m >= 18 * 60 && m < 18 * 60 + 30) ? 'afternoon' : 'morning';
   try {
-    const resp = await axios.post(
+    const resp = await requestWithRetry(({ timeout }) => axios.post(
       `${RENDER_URL}/api/inh/discovery-checked`,
       { ventana },
-      { headers: { 'Content-Type': 'application/json', 'x-api-key': API_KEY }, validateStatus: () => true, timeout: 15000 }
-    );
+      { headers: { 'Content-Type': 'application/json', 'x-api-key': API_KEY }, validateStatus: s => s < 500, timeout }
+    ));
     console.log(`[INH] discovery-checked (${ventana}) -> HTTP ${resp.status}`);
   } catch (err) {
     console.error(`[INH] discovery-checked falló: ${err.message}`);
@@ -728,10 +745,13 @@ async function run() {
         const totalPos = races.reduce((s, r) => s + (r.horses || []).filter(h => h.position).length, 0);
         console.log(`[INH] Sending ${races.length} races for ${fecha}, ${totalHorses} horses (${[...new Set(races.map(r => r.track))].join(', ')}), posiciones=${totalPos}`);
         try {
-          const resp = await axios.post(`${RENDER_URL}/api/inh/data`, payload, {
+          // validateStatus < 500 hace que un 5xx (p. ej. cold start de Render) lance
+          // error, que requestWithRetry captura y reintenta automáticamente.
+          const resp = await requestWithRetry(({ timeout }) => axios.post(`${RENDER_URL}/api/inh/data`, payload, {
             headers: { 'Content-Type': 'application/json', 'x-api-key': API_KEY },
-            validateStatus: () => true
-          });
+            validateStatus: s => s < 500,
+            timeout
+          }));
           console.log(`[INH] POST ${fecha} -> HTTP ${resp.status}`);
         } catch (err) {
           console.error(`[INH] POST ${fecha} falló: ${err.message}`);

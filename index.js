@@ -545,6 +545,15 @@ app.get('*', (req, res) => {
   res.sendFile(path.join(staticDir, 'index.html'));
 });
 
+// ───── Error handler global ─────
+// Distingue en Render Logs un 500 real de la app (aquí) del error de plataforma
+// (cold start "Internal server error. Correlation ID: ...") que no llega a Express.
+app.use((err, req, res, next) => {
+  console.error('[ERROR]', err?.stack || err);
+  if (res.headersSent) return next(err);
+  res.status(500).json({ error: err?.message || 'Error interno' });
+});
+
 /* ───── Start ───── */
 
 app.listen(PORT, () => {
