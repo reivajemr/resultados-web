@@ -102,6 +102,42 @@ function normalizeRaces(races) {
   }));
 }
 
+function toProgram(rs) {
+  return (rs || []).map(r => ({
+    raceNumber: r.raceNumber,
+    track: r.track,
+    raceTime: r.raceTime || '',
+    raceDate: r.raceDate || '',
+    statusText: r.statusText || 'ABIERTA'
+  }));
+}
+
+// Fusiona las carreras entrantes con las ya guardadas para que un run que
+// omita una carrera (o la extraiga sin posiciones) nunca pise resultados ya publicados.
+function mergeRaces(existing, incoming) {
+  const countPos = (r) => (r.horses || []).filter(h => h && h.position).length;
+  const key = (r) => `${r.track || r.hippodromo || ''}|${r.raceNumber}`;
+  const map = new Map();
+  for (const r of existing || []) {
+    const k = key(r);
+    if (!map.has(k)) map.set(k, r);
+  }
+  const used = new Set();
+  const out = [];
+  for (const inc of incoming || []) {
+    const k = key(inc);
+    const ex = map.get(k);
+    used.add(k);
+    if (!ex) { out.push(inc); continue; }
+    out.push(countPos(ex) > countPos(inc) ? ex : inc);
+  }
+  // Conserva carreras que el payload entrante omitió por completo
+  for (const [k, r] of map) {
+    if (!used.has(k)) out.push(r);
+  }
+  return out;
+}
+
 app.get('/api/inh', async (req, res) => {
   const fecha = req.query.fecha;
   if (fecha) {
@@ -136,7 +172,7 @@ app.get('/api/inh', async (req, res) => {
   });
 });
 
-app.post('/api/inh/data', (req, res) => {
+app.post('/api/inh/data', async (req, res) => {
   if (req.headers['x-api-key'] !== process.env.API_KEY) {
     return res.status(401).json({ error: 'No autorizado' });
   }
@@ -145,39 +181,48 @@ app.post('/api/inh/data', (req, res) => {
   // In-memory (live "today" view) only keeps today's races; past/future
   // jornadas are persisted to the DB under their own fecha.
   const today = vetToday();
-  const todayRaces = normRaces.filter(r => (r.fecha || fecha || today) === today);
+  const lastPoll = new Date().toISOString();
+
+  // Group incoming races by canonical date
+  const byFecha = {};
+  for (const r of normRaces) {
+    const d = r.fecha || fecha || today;
+    if (!byFecha[d]) byFecha[d] = [];
+    byFecha[d].push(r);
+  }
+
+  // Merge each incoming group with what's already stored so that a run that
+  // misses a race (or extracts it without positions) never overwrites
+  // previously extracted results. Keep the version with more positions.
+  const mergedByFecha = {};
+  if (db) {
+    for (const [d, rs] of Object.entries(byFecha)) {
+      try {
+        const existing = await db.cargarProgramaINH(d);
+        const exRaces = existing && Array.isArray(existing.races) ? existing.races : [];
+        mergedByFecha[d] = mergeRaces(exRaces, rs);
+      } catch (err) {
+        console.error(`[INH] Error leyendo programa ${d} para merge:`, err.message);
+        mergedByFecha[d] = rs;
+      }
+    }
+  } else {
+    Object.assign(mergedByFecha, byFecha);
+  }
+
+  const todayRaces = mergedByFecha[today] || normRaces.filter(r => (r.fecha || fecha || today) === today);
   inhData = {
-    program: todayRaces.map(r => ({
-      raceNumber: r.raceNumber,
-      track: r.track,
-      raceTime: r.raceTime || '',
-      raceDate: r.raceDate || '',
-      statusText: r.statusText || 'ABIERTA'
-    })),
+    program: toProgram(todayRaces),
     races: todayRaces,
     isRunning: typeof isRunning === 'boolean' ? isRunning : inhData.isRunning,
-    lastPoll: new Date().toISOString(),
+    lastPoll,
     fecha: fecha || today
   };
   console.log('[INH] Datos recibidos:', inhData.program.length, 'carreras de hoy,', normRaces.length, 'totales');
 
   // Persist to DB, one row per canonical race date
-  if (db && normRaces.length) {
-    const toProgram = (rs) => rs.map(r => ({
-      raceNumber: r.raceNumber,
-      track: r.track,
-      raceTime: r.raceTime || '',
-      raceDate: r.raceDate || '',
-      statusText: r.statusText || 'ABIERTA'
-    }));
-    const byFecha = {};
-    for (const r of normRaces) {
-      const d = r.fecha || fecha || vetToday();
-      if (!byFecha[d]) byFecha[d] = [];
-      byFecha[d].push(r);
-    }
-    const lastPoll = new Date().toISOString();
-    for (const [d, rs] of Object.entries(byFecha)) {
+  if (db && Object.keys(mergedByFecha).length) {
+    for (const [d, rs] of Object.entries(mergedByFecha)) {
       db.guardarProgramaINH(d, { program: toProgram(rs), races: rs, isRunning, lastPoll }).catch(e =>
         console.error(`[INH] Error guardando en DB (${d}):`, e.message)
       );
