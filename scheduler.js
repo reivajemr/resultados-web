@@ -194,6 +194,9 @@ class AnimalitosScheduler {
     const item = found[0];
     const number = item.number_animal || item.number || item.giveaway_results_number_literal || item.resultado1;
     const animal = item.name_animal || item.animal || item.giveaway_results_literal;
+    // Un sorteo sin número ni animal todavía no tiene resultado publicado;
+    // retornar null para que el scheduler siga reintentando (no marcar "completado" vacío).
+    if (number == null && animal == null) return null;
     return {
       number,
       animal,
@@ -209,6 +212,9 @@ class AnimalitosScheduler {
       const [sH, sM] = s.time.split(':').map(Number);
       const [tH, tM] = time.split(':').map(Number);
       if (sH === tH && sM === tM) {
+        // Un sorteo sin número todavía no tiene resultado publicado;
+        // retornar null para que el scheduler siga reintentando.
+        if (s.result == null || String(s.result).trim() === '') return null;
         return {
           number: s.result,
           animal: null,
@@ -386,10 +392,21 @@ class AnimalitosScheduler {
     if (!this.db) return [];
     const results = [];
     const dateCompact = dayStr.replace(/-/g, '');
+    const today = this._getTodayStr();
     for (const game of GAMES) {
       try {
         const existing = await this.db.cargarResultados(game.id, dayStr);
-        if (existing?.length > 0) {
+        // Solo saltamos el juego si todas sus horas ya tienen resultado válido.
+        // Un sorteo guardado con datos vacíos (sin número ni animal) cuenta como faltante
+        // para poder re-extraerlo.
+        const have = new Set();
+        for (const r of existing || []) {
+          const d = r.datos;
+          const empty = !d || (d.number == null && d.animal == null && d.raw?.resultado1 == null);
+          if (!empty) have.add(r.hora);
+        }
+        const missingTimes = game.schedule.filter(t => !have.has(t));
+        if (missingTimes.length === 0) {
           results.push({ game: game.id, status: 'already_exists' });
           continue;
         }
@@ -413,6 +430,8 @@ class AnimalitosScheduler {
           continue;
         }
         for (const time of game.schedule) {
+          // No sobrescribir resultados ya guardados
+          if (!missingTimes.includes(time)) continue;
           let extracted = null;
           switch (game.source) {
             case 'lottoactivo':
@@ -427,6 +446,16 @@ class AnimalitosScheduler {
           }
           if (extracted) {
             await this.db.guardarResultado(game.id, dayStr, time, extracted);
+            if (dayStr === today) {
+              if (this.cache[dayStr]?.[game.id]?.results) {
+                this.cache[dayStr][game.id].results[time] = extracted;
+              }
+              if (this.state[dayStr]?.[game.id]?.[time]) {
+                this.state[dayStr][game.id][time].status = 'completed';
+                this.state[dayStr][game.id][time].result = extracted;
+                this.state[dayStr][game.id][time].error = null;
+              }
+            }
             results.push({ game: game.id, time, status: 'completed' });
           }
         }
