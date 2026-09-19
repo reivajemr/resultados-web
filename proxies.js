@@ -4,6 +4,27 @@ import * as cheerio from 'cheerio';
 const LOTTO_ACTIVO_BASE = 'https://www.lottoactivo.com';
 const LOTTO_ACTIVO_API = `${LOTTO_ACTIVO_BASE}/core/process.php`;
 const GUACHARITO_API = 'https://api.lotterly.co/v1/results/el-guacharito-millonario/';
+const GUACHARO_ACTIVO_API = 'https://api.lotterly.co/v1/results/guacharo-activo/';
+
+// Guácharo Activo: número (2 dígitos) -> nombre del animalito (según web oficial)
+export const ANIMALITOS_GUACHARO = {
+  '00': 'Ballena', '0': 'Delfín', '01': 'Carnero', '02': 'Toro', '03': 'Ciempiés',
+  '04': 'Alacrán', '05': 'León', '06': 'Rana', '07': 'Perico', '08': 'Ratón',
+  '09': 'Águila', '10': 'Tigre', '11': 'Gato', '12': 'Caballo', '13': 'Mono',
+  '14': 'Paloma', '15': 'Zorro', '16': 'Oso', '17': 'Pavo', '18': 'Burro',
+  '19': 'Chivo', '20': 'Cochino', '21': 'Gallo', '22': 'Camello', '23': 'Cebra',
+  '24': 'Iguana', '25': 'Gallina', '26': 'Vaca', '27': 'Perro', '28': 'Zamuro',
+  '29': 'Elefante', '30': 'Caimán', '31': 'Lapa', '32': 'Ardilla', '33': 'Pescado',
+  '34': 'Venado', '35': 'Jirafa', '36': 'Culebra', '37': 'Tortuga', '38': 'Búfalo',
+  '39': 'Lechuza', '40': 'Avispa', '41': 'Canguro', '42': 'Tucán', '43': 'Mariposa',
+  '44': 'Chigüire', '45': 'Garza', '46': 'Puma', '47': 'Pavo Real', '48': 'Puercoespín',
+  '49': 'Pereza', '50': 'Canario', '51': 'Pelícano', '52': 'Pulpo', '53': 'Caracol',
+  '54': 'Grillo', '55': 'Oso Hormiguero', '56': 'Tiburón', '57': 'Pato', '58': 'Hormiga',
+  '59': 'Pantera', '60': 'Camaleón', '61': 'Panda', '62': 'Cachicamo', '63': 'Cangrejo',
+  '64': 'Gavilán', '65': 'Araña', '66': 'Lobo', '67': 'Avestruz', '68': 'Jaguar',
+  '69': 'Conejo', '70': 'Bisonte', '71': 'Guacamaya', '72': 'Gorila', '73': 'Hipopótamo',
+  '74': 'Turpial', '75': 'Guacharo'
+};
 const LOTERIA_SECURE = 'https://secure.loteriadehoy.com';
 const LAGRAJITA_API = 'https://lagranjita.com/api/results.json';
 
@@ -129,6 +150,17 @@ export async function fetchLottoActivo(gameId, date) {
 export async function fetchGuacharito(date) {
   const { data } = await axios.get(GUACHARITO_API, {
     params: { exact_date: date },
+    headers: { 'User-Agent': USER_AGENT },
+    timeout: 15000
+  });
+  return data;
+}
+
+/* ───── Guácharo Activo (public API, mismo host lotterly) ───── */
+
+export async function fetchGuacharoActivo(date) {
+  const { data } = await axios.get(GUACHARO_ACTIVO_API, {
+    params: { exact_date: date, extended: true },
     headers: { 'User-Agent': USER_AGENT },
     timeout: 15000
   });

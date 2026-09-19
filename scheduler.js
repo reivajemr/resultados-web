@@ -1,11 +1,13 @@
 import {
   fetchLottoActivo,
   fetchGuacharito,
+  fetchGuacharoActivo,
   fetchLaGranjitaFromAPI,
   fetchLaGranjitaFallback,
   fetchLottoActivoFallback,
   fetchGuacharitoFallback
 } from './proxies.js';
+import { ANIMALITOS_GUACHARO } from './proxies.js';
 
 const VET_OFFSET = -4 * 60 * 60 * 1000;
 const DRAW_DELAY_MS = 5 * 60 * 1000;
@@ -23,6 +25,12 @@ const GAMES = [
     id: 'la_granjita',
     name: 'La Granjita',
     source: 'lagranjita',
+    schedule: ['08:00','09:00','10:00','11:00','12:00','13:00','14:00','15:00','16:00','17:00','18:00','19:00']
+  },
+  {
+    id: 'guacharo_activo',
+    name: 'Guácharo Activo',
+    source: 'guacharoactivo',
     schedule: ['08:00','09:00','10:00','11:00','12:00','13:00','14:00','15:00','16:00','17:00','18:00','19:00']
   },
   {
@@ -136,6 +144,10 @@ class AnimalitosScheduler {
           results = await fetchGuacharitoFallback(this.loteriaEmail, this.loteriaPassword, dateCompact);
         }
         break;
+      case 'guacharoactivo':
+        // API pública (api.lotterly.co); sin fallback, el scheduler reintenta solo.
+        results = await fetchGuacharoActivo(today);
+        break;
       case 'lagranjita': {
         // Primary: LoteriaDeHoy (result/tbl 8/22) — reachable from Render.
         // Secondary: lagranjita.com API — some environments get 403 (IP block).
@@ -227,6 +239,30 @@ class AnimalitosScheduler {
     return null;
   }
 
+  _extractGuacharoActivoResult(data, time) {
+    if (!Array.isArray(data)) return null;
+    const [tH, tM] = time.split(':').map(Number);
+    for (const s of data) {
+      if (!s.time) continue;
+      const [sH, sM] = s.time.split(':').map(Number);
+      if (sH === tH && sM === tM) {
+        const number = s.results?.[0]?.result ?? s.results?.[0]?.number;
+        // Un sorteo sin número todavía no tiene resultado publicado;
+        // retornar null para que el scheduler siga reintentando.
+        if (number == null || String(number).trim() === '') return null;
+        const key = String(number).padStart(2, '0');
+        return {
+          number: key,
+          animal: ANIMALITOS_GUACHARO[key] || null,
+          color: null,
+          time: s.time.slice(0, 5),
+          raw: s
+        };
+      }
+    }
+    return null;
+  }
+
   _extractLoteriaResult(data, time) {
     if (!Array.isArray(data)) return null;
     for (const s of data) {
@@ -288,6 +324,9 @@ class AnimalitosScheduler {
               break;
             case 'guacharito':
               extracted = this._extractGuacharitoResult(data, time);
+              break;
+            case 'guacharoactivo':
+              extracted = this._extractGuacharoActivoResult(data, time);
               break;
             case 'lagranjita':
               extracted = this._extractLoteriaResult(data, time);
@@ -420,6 +459,9 @@ class AnimalitosScheduler {
             data = await fetchGuacharito(dayStr);
             if (!data?.length) data = await fetchGuacharitoFallback(this.loteriaEmail, this.loteriaPassword, dateCompact);
             break;
+          case 'guacharoactivo':
+            data = await fetchGuacharoActivo(dayStr);
+            break;
           case 'lagranjita':
             data = await fetchLaGranjitaFallback(this.loteriaEmail, this.loteriaPassword, dateCompact);
             if (!data?.length) data = await fetchLaGranjitaFromAPI(dayStr);
@@ -439,6 +481,9 @@ class AnimalitosScheduler {
               break;
             case 'guacharito':
               extracted = this._extractGuacharitoResult(data, time);
+              break;
+            case 'guacharoactivo':
+              extracted = this._extractGuacharoActivoResult(data, time);
               break;
             case 'lagranjita':
               extracted = this._extractLoteriaResult(data, time);
